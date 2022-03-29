@@ -1,1 +1,4 @@
 dataset/
+paper-base/
+sync*
+!sync-list.txt
