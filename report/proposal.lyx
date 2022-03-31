@@ -1,0 +1,377 @@
+#LyX 2.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 544
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_minted 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Standard
+\begin_inset CommandInset include
+LatexCommand include
+filename "math_shorthand.lyx"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Title
+Proposal of 
+\begin_inset Quotes eld
+\end_inset
+
+RLOP: Reinforcement Learning in Option Pricing
+\begin_inset Quotes erd
+\end_inset
+
+
+\end_layout
+
+\begin_layout Author
+Ziheng Chen, Zhou Fang
+\end_layout
+
+\begin_layout Standard
+In this project, we are going to price options by using reinforcement learning.
+ To achieve this goal, we need to replicate the payoff of options at different
+ times and under different situations by holding and selling the underlying
+ stocks at different times and under different situations.
+ Since the whole portfolio will be self-financing, and at each step, different
+ hedging strategies will make different 
+\end_layout
+
+\begin_layout Standard
+In other words, to price options, people need to hedge a short position
+ of the options.
+ Therefore, our question is a sequential problem.
+ 
+\end_layout
+
+\begin_layout Standard
+Black-Scholes formula (B-S formula) is the first formula that tells people
+ how to price European-style call options.
+ The idea behind the B-S formula is that one can hedge a short position
+ of call options of a certain stock by holding that stock and putting extra
+ money at the bank to earn interest.
+ The problem with the B-S formula is people need to hedge short positions
+ continuously, which means they should sell or buy stock, and put or borrow
+ money from the bank at every moment.
+ This is unrealistic, and costly for almost all investors.
+ Most importantly, the prices given by the B-S formula differ greatly from
+ than prices of options in real life.
+ In addition, a sub-optimal hedging position at the current period will
+ affect the cash and stock position in the next period.
+ The accumulation of those errors will affect the final price profoundly.
+ 
+\end_layout
+
+\begin_layout Standard
+Based on the excellent QLBS paper (Igor, 2020), we propose to price options
+ in discrete time and also consider the effects of transaction cost and
+ interests rates difference for borrowing and depositing money at a bank.
+ Consider a sequence of asset prices 
+\begin_inset Formula $\left\{ S_{t}\right\} _{t=0,1,\dots}$
+\end_inset
+
+, adapted under the filtration 
+\begin_inset Formula $\left\{ \cF_{t}\right\} $
+\end_inset
+
+, upon which we wish to build an option with payoff function 
+\begin_inset Formula $h$
+\end_inset
+
+ at the maturity time 
+\begin_inset Formula $T$
+\end_inset
+
+.
+ The option is realized as a hedge portfolio which consists of some holdings
+ 
+\begin_inset Formula $u_{t}$
+\end_inset
+
+ of the underlying asset and the risk-free deposit 
+\begin_inset Formula $B_{t}$
+\end_inset
+
+.
+ Let 
+\begin_inset Formula 
+\[
+\Pi_{t}:=u_{t}S_{t}+B_{t}
+\]
+
+\end_inset
+
+denote the value of the portfolio at time 
+\begin_inset Formula $t$
+\end_inset
+
+.
+ To fulfill the option contract, the holding position is cleared at the
+ terminal time 
+\begin_inset Formula $T$
+\end_inset
+
+ and is fully converted into cash position, i.e.
+\begin_inset Formula 
+\[
+\Pi_{T}=B_{T}=h\left(S_{T}\right).
+\]
+
+\end_inset
+
+The deposit position at a particular time is solved via the self-financing
+ condition which requires that the instantaneous value of the portfolio
+ is kept same before and after the re-hedging operation:
+\begin_inset Formula 
+\begin{equation}
+u_{t}S_{t+1}+e^{r\Delta t}B_{t}=u_{t+1}S_{t+1}+B_{t+1}\label{eq:self-financing}
+\end{equation}
+
+\end_inset
+
+where 
+\begin_inset Formula $r$
+\end_inset
+
+ stands for the risk-free interest rate.
+ Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:self-financing"
+
+\end_inset
+
+ can be used to solve how much money is needed to cover future trading activitie
+s.
+\end_layout
+
+\begin_layout Standard
+A state is defined as a tuple of an integer and two real numbers 
+\begin_inset Formula $\left(t,X_{t},\widehat{B}_{t}\right)$
+\end_inset
+
+, where 
+\begin_inset Formula 
+\[
+X_{t}=-\left(\mu-\frac{\sigma^{2}}{2}\right)t+\log S_{t}
+\]
+
+\end_inset
+
+is the compensated logarithm price and 
+\begin_inset Formula $\widehat{B}_{t}$
+\end_inset
+
+ is the estimate of the current deposit position.
+ The action space is the real number, indicating how much shares are hedged
+ at a particular time.
+ A policy is a mapping from the state space to the action space, i.e.
+\begin_inset Formula 
+\[
+\pi:\left(t,X_{t},\widehat{B}_{t}\right)\mapsto a_{t}.
+\]
+
+\end_inset
+
+Notice that we use 
+\begin_inset Formula $a_{t}$
+\end_inset
+
+ for the log-processed input 
+\begin_inset Formula $X_{t}$
+\end_inset
+
+ while 
+\begin_inset Formula $u_{t}$
+\end_inset
+
+ for the asset price 
+\begin_inset Formula $S_{t}$
+\end_inset
+
+ in normal scale.
+\end_layout
+
+\begin_layout Standard
+The reward function is derived from the Bellman's optimality equation where
+ we define the value function in the first place.
+ The idea is to minimize the money needed to initiate the hedge portfolio
+ as well as to minimize the volatility throughout the trading periods.
+ Given a hedging strategy 
+\begin_inset Formula $\pi$
+\end_inset
+
+, the value function is defined as
+\begin_inset Formula 
+\[
+V_{t}^{\pi}\left(X_{t}\right)=\bE^{\pi}\left[-\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}e^{-r\left(\tau-t\right)}\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)|\cF_{\tau}\right]|\cF_{t}\right]
+\]
+
+\end_inset
+
+where 
+\begin_inset Formula $\lambda$
+\end_inset
+
+ is the risk aversion factor.
+ The reward function can be derived by matching the corresponding terms
+ in the Bellman's equation:
+\begin_inset Formula 
+\[
+R_{t}\left(X_{t},a_{t},X_{t+1}\right):=\gamma a_{t}\Delta S_{t}-\lambda\text{Var}\left[\Pi_{t}|\cF_{t}\right]
+\]
+
+\end_inset
+
+where 
+\begin_inset Formula $\gamma=e^{-r\Delta t}$
+\end_inset
+
+ is the discounting factor.
+ The reward function can be further complicated by the consideration of
+ trading cost, usually adding an 
+\begin_inset Formula $-\abs{a_{t}}$
+\end_inset
+
+ term.
+ The connection between the value function and option pricing is that the
+ option price is given by the minus optimal Q-function.
+\end_layout
+
+\begin_layout Standard
+Based on the aforementioned settings proposed by QLBS (Igor, 2020), we seek
+ to build a method where the RL agent can learn an optimal hedging strategy
+ in a realistic setting.
+ (We need to point out that QLBS is not an interactive RL model since the
+ optimal hedging strategy 
+\begin_inset Formula $\pi^{*}$
+\end_inset
+
+ is solved in a closed form rather than learning from the reward feedback).
+ The initial plan is as follows:
+\end_layout
+
+\begin_layout Enumerate
+Understand the financial background as well as finalize the mathematical
+ standing point.
+\end_layout
+
+\begin_layout Enumerate
+Implement a hedging environment as well as collect data for training purposes.
+\end_layout
+
+\begin_layout Enumerate
+Implement the RLOP algorithm and benchmark with other baseline solutions.
+\end_layout
+
+\begin_layout Enumerate
+Investigate how the exterior parameters (such as interest rate, transaction
+ cost) might play a role in the pricing strategy.
+ 
+\end_layout
+
+\begin_layout Standard
+The learning algorithm we plan to use are MC methods and TD (or TD
+\begin_inset Formula $\left(\lambda\right)$
+\end_inset
+
+) methods.
+ The baseline we wish to compare against are the L-S model (Longstaff &
+ Schwartz, 2001) and the QLBS method (Igor, 2020).
+ We wish to further investigate which model best summaries the market behavior
+ if allowed within the timeframe.
+\end_layout
+
+\begin_layout Subsection*
+References
+\end_layout
+
+\begin_layout Itemize
+Halperin, Igor.
+ "Qlbs: Q-learner in the black-scholes (-merton) worlds." The Journal of
+ Derivatives 28.1 (2020): 99-122.
+\end_layout
+
+\begin_layout Itemize
+Longstaff, Francis A., and Eduardo S.
+ Schwartz.
+ "Valuing American options by simulation: a simple least-squares approach."
+ The review of financial studies 14.1 (2001): 113-147.
+\end_layout
+
+\end_body
+\end_document
