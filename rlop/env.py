@@ -8,6 +8,7 @@ from gym import spaces
 from gym.envs.registration import register
 
 import util
+from util.sample import geometricBM
 
 NAP = 'normalized_asset_price'
 SP = 'strike_price'
@@ -22,11 +23,8 @@ class RLOPEnv(gym.Env):
                  gamma: np.sctypes, initial_portfolio_value: np.ndarray):
         self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
         self.observation_space = spaces.Dict({
-            NAP: spaces.Box(low=-np.inf, high=np.inf, shape=(1, )),
-            SP: spaces.Box(low=0, high=np.inf, shape=(1,)),
+            NAP: spaces.Box(low=-np.inf, high=np.inf, shape=(1,)),
             RT: spaces.Box(low=1, high=max_time, shape=(1,)),
-            Mu: spaces.Box(low=-np.inf, high=np.inf, shape=(1,)),
-            Sigma: spaces.Box(low=0, high=np.inf, shape=(1,)),
             PV: spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
         })
 
@@ -38,6 +36,12 @@ class RLOPEnv(gym.Env):
         self.max_time = max_time
         self.gamma = gamma
         self.initial_portfolio_value = initial_portfolio_value
+
+        self.info = {
+            SP: self.strike_price,
+            Mu: self.mu,
+            Sigma: self.sigma,
+        }
 
         # Episodic variables
         self.current_time = max_time
@@ -71,12 +75,9 @@ class RLOPEnv(gym.Env):
 
         return {
                    NAP: self._normalized_price[self.current_time],
-                   SP: self.strike_price,
                    RT: self.max_time - self.current_time,
-                   Mu: self.mu,
-                   Sigma: self.sigma,
                    PV: self.portfolio_value,
-               }, reward, done, {}
+               }, reward, done, self.info
 
     def reset(
             self,
@@ -85,21 +86,18 @@ class RLOPEnv(gym.Env):
             return_info: bool = False,
             options: Optional[dict] = None,
     ):
-        self._normalized_price = np.random.randn(self.max_time + 1).cumsum()
-        self._standard_price = np.random.randint(10, 20) * util.normalized_to_standard_price(
-            self._normalized_price, self.mu, self.sigma, np.arange(0, self.max_time + 1))
+        GBM, BM = geometricBM(100, self.max_time, 1, self.mu, self.sigma)
+        self._normalized_price = BM[0, :]
+        self._standard_price = GBM[0, :]
         self.current_time = 0
         self.portfolio_value = self.initial_portfolio_value
         self.portfolio_value_history[0, :] = self.portfolio_value
 
         return {
-            NAP: self._normalized_price[self.current_time],
-            SP: self.strike_price,
-            RT: self.max_time - self.current_time,
-            Mu: self.mu,
-            Sigma: self.sigma,
-            PV: self.portfolio_value,
-        }
+                   NAP: self._normalized_price[self.current_time],
+                   RT: self.max_time - self.current_time,
+                   PV: self.portfolio_value,
+               }, self.info
 
     def alter_initial_portfolio_value(self, initial_portfolio_value: np.ndarray):
         self.initial_portfolio_value = initial_portfolio_value
@@ -116,7 +114,7 @@ class RLOPEnv(gym.Env):
         ax_option.cla()
         for i in range(T):
             if i < tau:
-                payoff = util.payoff_of_option(self.is_call_option, self._standard_price[i+1], self.strike_price)
+                payoff = util.payoff_of_option(self.is_call_option, self._standard_price[i + 1], self.strike_price)
                 ax_option.plot(np.arange(0, i + 2), self.portfolio_value_history[0:i + 2, i], label=f'#{i:d}')
                 ax_option.plot(i + 1, payoff, marker='+')
             else:
@@ -141,10 +139,10 @@ class Test(TestCase):
                       initial_portfolio_value=np.array([1, 2, 3, 4, 5]))
 
         while True:
-            state, done = env.reset(), False
+            (state, info), done = env.reset(), False
             env.render()
 
             while not done:
                 action = np.random.rand(5)
-                state, reward, done, _ = env.step(action)
+                state, reward, done, info = env.step(action)
                 env.render()

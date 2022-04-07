@@ -41,11 +41,13 @@ def geometricBM(x0: np.float, T: int, N: int, mu: np.float, sigma: np.float):
     x_t = x_0 * exp( (mu - sigma^2 / 2) t + sigma * W_t)
     """
     GBM_trajectories = np.zeros([N, T + 1])
+    BM_trajectories = np.zeros([N, T + 1])
     for i in range(N):
         samples = brownian(0, T, 1)
         GBM_trajectories[i, :] = x0 * np.exp((mu - sigma * sigma / 2) * np.arange(T + 1) + sigma * samples)
+        BM_trajectories[i, :] = samples
 
-    return GBM_trajectories
+    return GBM_trajectories, BM_trajectories
 
 
 class Test(TestCase):
