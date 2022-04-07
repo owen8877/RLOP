@@ -4,51 +4,73 @@ from unittest import TestCase
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
-from gym import spaces
+import seaborn as sns
+import torch
 from gym.envs.registration import register
 
 import util
 from util.sample import geometricBM
 
-NAP = 'normalized_asset_price'
-SP = 'strike_price'
-RT = 'remaining_time'
-Mu = 'mu'
-Sigma = 'sigma'
-PV = 'portfolio_value'
+
+class Info:
+    def __init__(self, strike_price: np.sctypes, r: np.sctypes, mu: np.sctypes, sigma: np.sctypes):
+        self.strike_price = strike_price
+        self.r = r
+        self.mu = mu
+        self.sigma = sigma
+
+
+class State:
+    def __init__(self, normalized_asset_price: np.sctypes, remaining_time: int, portfolio_value: np.ndarray):
+        self.normalized_asset_price = normalized_asset_price
+        self.remaining_time = remaining_time  # a.k.a. rt
+        self.portfolio_value = portfolio_value  # shape=(rt,)
+
+    def to_tensors(self, info):
+        return [torch.tensor([
+            self.normalized_asset_price,
+            t + 1,
+            self.portfolio_value[t],
+            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, t + 1),
+            info.r,
+            info.mu,
+            info.sigma
+        ]).float() for t in range(self.remaining_time)]
 
 
 class RLOPEnv(gym.Env):
     def __init__(self, is_call_option: bool, strike_price: np.sctypes, max_time: int, mu: np.sctypes, sigma: np.sctypes,
-                 gamma: np.sctypes, initial_portfolio_value: np.ndarray):
-        self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
-        self.observation_space = spaces.Dict({
-            NAP: spaces.Box(low=-np.inf, high=np.inf, shape=(1,)),
-            RT: spaces.Box(low=1, high=max_time, shape=(1,)),
-            PV: spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
-        })
+                 r: np.sctypes, initial_portfolio_value: np.ndarray, initial_asset_price: np.sctypes):
+        # self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
+        # self.observation_space = spaces.Dict({
+        #     NAP: spaces.Box(low=-np.inf, high=np.inf, shape=(1,)),
+        #     RT: spaces.Box(low=1, high=max_time, shape=(1,)),
+        #     PV: spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
+        # })
 
         # Environment constants, or stay constant for quite a long time
         self.is_call_option = is_call_option
-        self.strike_price = strike_price
-        self.mu = mu
-        self.sigma = sigma
         self.max_time = max_time
-        self.gamma = gamma
         self.initial_portfolio_value = initial_portfolio_value
-
-        self.info = {
-            SP: self.strike_price,
-            Mu: self.mu,
-            Sigma: self.sigma,
-        }
+        self.initial_asset_price = initial_asset_price
+        self.info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma)
 
         # Episodic variables
         self.current_time = max_time
         self.portfolio_value_history = np.zeros((self.max_time + 1, self.max_time))
 
         # For rendering
+        self.fig, self.axs = None, None
+
+    def __init_render__(self):
         self.fig, self.axs = plt.subplots(2, 1, figsize=(7, 5))
+
+    def describe_state(self):
+        return State(
+            normalized_asset_price=self._normalized_price[self.current_time],
+            remaining_time=self.max_time - self.current_time,
+            portfolio_value=self.portfolio_value,
+        )
 
     def step(self, action):
         """
@@ -62,22 +84,18 @@ class RLOPEnv(gym.Env):
 
         # compute the cash position
         cash_tau = self.portfolio_value - action * S_tau
-        cash_t = cash_tau / self.gamma
+        cash_t = cash_tau * np.exp(self.info.r)
         portfolio_value_t = cash_t + action * S_t
 
-        payoff = util.payoff_of_option(self.is_call_option, S_t, self.strike_price)
-        reward = -(payoff - portfolio_value_t[self.current_time - 1]) ** 2
+        payoff = util.payoff_of_option(self.is_call_option, S_t, self.info.strike_price)
+        reward = -(payoff - portfolio_value_t[0]) ** 2
 
-        self.portfolio_value = portfolio_value_t
-        self.portfolio_value_history[t, :] = self.portfolio_value
+        self.portfolio_value = portfolio_value_t[1:]
+        self.portfolio_value_history[t, t-1:] = portfolio_value_t
         self.current_time += 1
         done = self.current_time == self.max_time
 
-        return {
-                   NAP: self._normalized_price[self.current_time],
-                   RT: self.max_time - self.current_time,
-                   PV: self.portfolio_value,
-               }, reward, done, self.info
+        return self.describe_state(), reward, done, self.info
 
     def reset(
             self,
@@ -86,23 +104,21 @@ class RLOPEnv(gym.Env):
             return_info: bool = False,
             options: Optional[dict] = None,
     ):
-        GBM, BM = geometricBM(100, self.max_time, 1, self.mu, self.sigma)
+        GBM, BM = geometricBM(self.initial_asset_price, self.max_time, 1, self.info.mu, self.info.sigma)
         self._normalized_price = BM[0, :]
         self._standard_price = GBM[0, :]
         self.current_time = 0
         self.portfolio_value = self.initial_portfolio_value
         self.portfolio_value_history[0, :] = self.portfolio_value
 
-        return {
-                   NAP: self._normalized_price[self.current_time],
-                   RT: self.max_time - self.current_time,
-                   PV: self.portfolio_value,
-               }, self.info
+        return self.describe_state(), self.info
 
     def alter_initial_portfolio_value(self, initial_portfolio_value: np.ndarray):
         self.initial_portfolio_value = initial_portfolio_value
 
     def render(self, mode="human"):
+        if self.fig is None:
+            self.__init_render__()
         ax_stock, ax_option = self.axs
         tau = self.current_time
         T = self.max_time
@@ -112,20 +128,22 @@ class RLOPEnv(gym.Env):
         ax_stock.set(xlim=[0, T], xlabel='time', ylabel='asset price')
 
         ax_option.cla()
+        palette = sns.color_palette("hls", T)
         for i in range(T):
             if i < tau:
-                payoff = util.payoff_of_option(self.is_call_option, self._standard_price[i + 1], self.strike_price)
-                ax_option.plot(np.arange(0, i + 2), self.portfolio_value_history[0:i + 2, i], label=f'#{i:d}')
-                ax_option.plot(i + 1, payoff, marker='+')
+                payoff = util.payoff_of_option(self.is_call_option, self._standard_price[i + 1], self.info.strike_price)
+                ax_option.plot(np.arange(0, i + 2), self.portfolio_value_history[0:i + 2, i], label=f'#{i:d}', c=palette[i])
+                ax_option.plot(i + 1, payoff, marker='+', c=palette[i])
             else:
-                ax_option.plot(np.arange(0, tau + 1), self.portfolio_value_history[0:tau + 1, i], label=f'#{i:d}')
+                ax_option.plot(np.arange(0, tau + 1), self.portfolio_value_history[0:tau + 1, i], label=f'#{i:d}', c=palette[i])
         ax_option.set(xlim=[0, T], xlabel='time', ylabel='asset price')
 
         self.fig.canvas.draw_idle()
         plt.show(block=False)
 
     def close(self):
-        pass
+        if self.fig is not None:
+            plt.close(self.fig)
 
 
 register(id='RLOP-v0', entry_point='rlop.env:RLOPEnv')
@@ -135,14 +153,14 @@ class Test(TestCase):
     def test_step(self):
         import matplotlib as mpl
         mpl.use('TkAgg')
-        env = RLOPEnv(is_call_option=True, strike_price=11, max_time=5, mu=.1, sigma=1, gamma=0.99,
-                      initial_portfolio_value=np.array([1, 2, 3, 4, 5]))
+        env = RLOPEnv(is_call_option=True, strike_price=100, max_time=5, mu=0.5e-2, sigma=1e-2, r=0.025e-2,
+                      initial_portfolio_value=np.array([1, 2, 3, 4, 5]), initial_asset_price=100)
 
         while True:
             (state, info), done = env.reset(), False
             env.render()
 
             while not done:
-                action = np.random.rand(5)
+                action = np.random.rand(state.remaining_time)
                 state, reward, done, info = env.step(action)
                 env.render()
