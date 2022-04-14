@@ -29,9 +29,19 @@
 \bibtex_command default
 \index_command default
 \paperfontsize default
-\use_hyperref false
+\spacing onehalf
+\use_hyperref true
+\pdf_bookmarks true
+\pdf_bookmarksnumbered false
+\pdf_bookmarksopen false
+\pdf_bookmarksopenlevel 1
+\pdf_breaklinks false
+\pdf_pdfborder false
+\pdf_colorlinks false
+\pdf_backref false
+\pdf_pdfusetitle true
 \papersize default
-\use_geometry false
+\use_geometry true
 \use_package amsmath 1
 \use_package amssymb 1
 \use_package cancel 1
@@ -44,6 +54,7 @@
 \use_package undertilde 1
 \cite_engine basic
 \cite_engine_type default
+\biblio_style plain
 \use_bibtopic false
 \use_indices false
 \paperorientation portrait
@@ -55,6 +66,10 @@
 \shortcut idx
 \color #008000
 \end_index
+\leftmargin 3.5cm
+\topmargin 4cm
+\rightmargin 3.5cm
+\bottommargin 4cm
 \secnumdepth 3
 \tocdepth 3
 \paragraph_separation indent
@@ -101,17 +116,18 @@ RLOP: Reinforcement Learning in Option Pricing
 Ziheng Chen, Zhou Fang
 \end_layout
 
+\begin_layout Section
+Introduction
+\end_layout
+
 \begin_layout Standard
 In this project, we are going to price options by using reinforcement learning.
  To achieve this goal, we need to replicate the payoff of options at different
  times and under different situations by holding and selling the underlying
  stocks at different times and under different situations.
  Since the whole portfolio will be self-financing, and at each step, different
- hedging strategies will make different 
-\end_layout
-
-\begin_layout Standard
-In other words, to price options, people need to hedge a short position
+ hedging strategies will make different value trajectories.
+ In other words, to price options, people need to hedge a short position
  of the options.
  Therefore, our question is a sequential problem.
  
@@ -122,7 +138,15 @@ Black-Scholes formula (B-S formula) is the first formula that tells people
  how to price European-style call options.
  The idea behind the B-S formula is that one can hedge a short position
  of call options of a certain stock by holding that stock and putting extra
- money at the bank to earn interest.
+ money at the bank to earn interest; see 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "shreve2004stochastic,alma991057973644906011"
+literal "false"
+
+\end_inset
+
+ for more in-depth theory and computation.
  The problem with the B-S formula is people need to hedge short positions
  continuously, which means they should sell or buy stock, and put or borrow
  money from the bank at every moment.
@@ -132,13 +156,168 @@ Black-Scholes formula (B-S formula) is the first formula that tells people
  In addition, a sub-optimal hedging position at the current period will
  affect the cash and stock position in the next period.
  The accumulation of those errors will affect the final price profoundly.
- 
+\end_layout
+
+\begin_layout Section
+Literature Review
 \end_layout
 
 \begin_layout Standard
-Based on the excellent QLBS paper (Igor, 2020), we propose to price options
- in discrete time and also consider the effects of transaction cost and
- interests rates difference for borrowing and depositing money at a bank.
+There have been vast works and literatures on option pricing.
+ A few exercising strategies for American option are reviewed in 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "li2009learning"
+literal "false"
+
+\end_inset
+
+.
+ The state space is composed of asset price trajectories 
+\begin_inset Formula $\left(S_{0},S_{1},\dots,S_{T}\right)$
+\end_inset
+
+ and an absorbing state 
+\begin_inset Formula $\boldsymbol{e}$
+\end_inset
+
+ which serves as the destination after the option has been exercised.
+ The action space simply contains two actions: hold and exercise.
+ The only non-zero reward is given when the option has been exercised at
+ the value specified by the option.
+ The Q-function is derived as in classical RL problems and it is the quantity
+ of interest.
+ The first method, LSPI (LS policy iteration), combines LSTD (LS with TD
+ update) and policy iteration together to achieve efficient learning.
+ The second and third ones, FQI (fitted Q-iteration algorithm) and LSMC
+ (Least squares Monte Carlo), take an DP approach where the exact exercising
+ problem is solved at each trading moment; the only difference lies in that
+ FDI takes a forward view in time while LSMC is backward, starting from
+ the exercising time.
+ In the same spirit, 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "fathan2021deep"
+literal "false"
+
+\end_inset
+
+ investigates the efficiency and effectiveness of different parametrizaiton
+ structures.
+ Three algorithms, namely double deep Q-Learning (DDQN), categorical distributio
+nal RL (C51), and implicit quantile networks (IQN) are compared where DDQN
+ learns the optimal Q-value function while the other two algorithms try
+ to learn the full distribution of the discounted reward.
+ They are tested on empirical data as well as simulated geometric Brownian
+ motion trajectories.
+\end_layout
+
+\begin_layout Standard
+Different RL architectures can be deployed in this field as well.
+ The Actor-Critic structure is used in 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "marzban2021deep"
+literal "false"
+
+\end_inset
+
+ for Equal Risk Pricing (ERP) in a risk averse setting under the framework
+ studied in 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "tamar2015policy"
+literal "false"
+
+\end_inset
+
+.
+ The concept of 
+\begin_inset Formula $\tau$
+\end_inset
+
+-expectile 
+\begin_inset Formula 
+\[
+\overline{\rho}\left(X\right)=\arg\min_{q}\tau\bE\left[\left(q-X\right)_{+}^{2}\right]+\left(1-\tau\right)\bE\left[\left(q-X\right)_{-}^{2}\right]
+\]
+
+\end_inset
+
+is used to elicit a coherent risk measure.
+ The value function is defined as the portfolio value under the recursive
+ coherent risk measure realized by expectiles, i.e.
+\begin_inset Formula 
+\[
+V_{t}\left(S_{t},Y_{t}\right)=\inf_{\xi_{t}}\overline{\rho}\left(-\xi_{t}^{T}\Delta S_{t+1}+V_{t+1}\left(S_{t+1},Y_{t+1}\right)|S_{t},Y_{t}\right)
+\]
+
+\end_inset
+
+with terminal condition 
+\begin_inset Formula $V_{T}\left(S_{T},Y_{T}\right)=F\left(S_{T},Y_{T}\right)$
+\end_inset
+
+ specified by the option contract.
+ With that being established, we can apply the policy gradient method where
+ the critic network updates the value estimate which the actor network can
+ refer to and build its policy upon.
+ The network uses a classical fully multilayer structure with alternating
+ activation functions.
+\end_layout
+
+\begin_layout Standard
+A hybrid attempt is carried out in 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "grassl2010reinforcement"
+literal "false"
+
+\end_inset
+
+ where the pricing strategy is based on a combination of optimal stopping
+ and terminal payoff.
+ The idea is that the agent can either hold the derivative until the terminal
+ time, executing the contract to get the payoff written, or sell the derivative
+ earlier according to the price at that particular moment.
+ The reward function is thus simplified defined as the selling/execution
+ price if such scenario happens.
+ The value function is parameterized by kernel function approximation and
+ the algorithm is tested using simulated geometric Brownian paths of an
+ European call option.
+\end_layout
+
+\begin_layout Standard
+We point out that it is also possible to directly solve the HJB equation
+ if the associated RL problem is formulated as a control porblem.
+ We refer to 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "halperin2021distributional"
+literal "false"
+
+\end_inset
+
+ for more details on distributional offline continuous-time RL learning
+ algorithms.
+\end_layout
+
+\begin_layout Section
+Proposed plan
+\end_layout
+
+\begin_layout Standard
+Based on the excellent QLBS paper 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "halperin2020qlbs"
+literal "false"
+
+\end_inset
+
+, we propose to price options in discrete time and also consider the effects
+ of transaction cost and interests rates difference for borrowing and depositing
+ money at a bank.
  Consider a sequence of asset prices 
 \begin_inset Formula $\left\{ S_{t}\right\} _{t=0,1,\dots}$
 \end_inset
@@ -313,9 +492,16 @@ where
 \end_layout
 
 \begin_layout Standard
-Based on the aforementioned settings proposed by QLBS (Igor, 2020), we seek
- to build a method where the RL agent can learn an optimal hedging strategy
- in a realistic setting.
+Based on the aforementioned settings proposed by QLBS 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "halperin2020qlbs"
+literal "false"
+
+\end_inset
+
+, we seek to build a method where the RL agent can learn an optimal hedging
+ strategy in a realistic setting.
  (We need to point out that QLBS is not an interactive RL model since the
  optimal hedging strategy 
 \begin_inset Formula $\pi^{*}$
@@ -350,27 +536,37 @@ The learning algorithm we plan to use are MC methods and TD (or TD
 \end_inset
 
 ) methods.
- The baseline we wish to compare against are the L-S model (Longstaff &
- Schwartz, 2001) and the QLBS method (Igor, 2020).
+ The baseline we wish to compare against are the L-S model 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "longstaff2001valuing"
+literal "false"
+
+\end_inset
+
+ and the QLBS method 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "halperin2020qlbs"
+literal "false"
+
+\end_inset
+
+.
  We wish to further investigate which model best summaries the market behavior
  if allowed within the timeframe.
 \end_layout
 
-\begin_layout Subsection*
-References
-\end_layout
+\begin_layout Standard
+\begin_inset CommandInset bibtex
+LatexCommand bibtex
+btprint "btPrintCited"
+bibfiles "ref"
+options "siam"
 
-\begin_layout Itemize
-Halperin, Igor.
- "Qlbs: Q-learner in the black-scholes (-merton) worlds." The Journal of
- Derivatives 28.1 (2020): 99-122.
-\end_layout
+\end_inset
 
-\begin_layout Itemize
-Longstaff, Francis A., and Eduardo S.
- Schwartz.
- "Valuing American options by simulation: a simple least-squares approach."
- The review of financial studies 14.1 (2001): 113-147.
+
 \end_layout
 
 \end_body
