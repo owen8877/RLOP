@@ -34,18 +34,18 @@ class ResNet(nn.Module):
 
         self.fc = nn.Linear(m, 1)
         if activation == "relu":
-            self.activation = lambda x: Func.relu(x)
+            self.activation = Func.relu
         elif activation == "relu3":
             self.activation = lambda x: Func.relu(x ** 3)
         elif activation == "elu":
-            self.activation = lambda x: Func.elu(x)
+            self.activation = Func.elu
         elif activation == "tanh":
-            self.activation = lambda x: torch.tanh(x)
+            self.activation = torch.tanh
         else:
             raise Exception(f"Can't recognize activation {activation}!")
 
     def forward(self, x):
-        z = self.preprocess(x)
+        z = self.activation(self.preprocess(x))
         for group in self.res_fcs:
             z_id = z
             for layer in group:
