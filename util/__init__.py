@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 
 
@@ -14,3 +16,7 @@ def payoff_of_option(is_call_option: bool, asset_price: np.sctypes, strike_price
         return np.max([0, asset_price - strike_price])
     else:
         return np.max([0, strike_price - asset_price])
+
+
+def ensure_dir(path):
+    Path(path).mkdir(parents=True, exist_ok=True)

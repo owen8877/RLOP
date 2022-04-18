@@ -9,6 +9,7 @@ import torch
 from gym.envs.registration import register
 
 import util
+from rlop.interface import InitialEstimator
 from util.sample import geometricBM
 
 
@@ -40,20 +41,15 @@ class State:
 
 class RLOPEnv(gym.Env):
     def __init__(self, is_call_option: bool, strike_price: np.sctypes, max_time: int, mu: np.sctypes, sigma: np.sctypes,
-                 r: np.sctypes, initial_portfolio_value: np.ndarray, initial_asset_price: np.sctypes):
-        # self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
-        # self.observation_space = spaces.Dict({
-        #     NAP: spaces.Box(low=-np.inf, high=np.inf, shape=(1,)),
-        #     RT: spaces.Box(low=1, high=max_time, shape=(1,)),
-        #     PV: spaces.Box(low=-np.inf, high=np.inf, shape=(max_time,))
-        # })
-
+                 r: np.sctypes, initial_estimator: InitialEstimator, initial_asset_price: np.sctypes, *,
+                 mutation: float = 0.01):
         # Environment constants, or stay constant for quite a long time
         self.is_call_option = is_call_option
         self.max_time = max_time
-        self.initial_portfolio_value = initial_portfolio_value
+        self.initial_estimator = initial_estimator
         self.initial_asset_price = initial_asset_price
         self.info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma)
+        self.mutation = mutation
 
         # Episodic variables
         self.current_time = max_time
@@ -88,10 +84,11 @@ class RLOPEnv(gym.Env):
         portfolio_value_t = cash_t + action * S_t
 
         payoff = util.payoff_of_option(self.is_call_option, S_t, self.info.strike_price)
-        reward = -(payoff - portfolio_value_t[0]) ** 2
+        reward = -np.abs(payoff - portfolio_value_t[0])
+        # reward = -(payoff - portfolio_value_t[0]) ** 2
 
         self.portfolio_value = portfolio_value_t[1:]
-        self.portfolio_value_history[t, t-1:] = portfolio_value_t
+        self.portfolio_value_history[t, t - 1:] = portfolio_value_t
         self.current_time += 1
         done = self.current_time == self.max_time
 
@@ -104,17 +101,17 @@ class RLOPEnv(gym.Env):
             return_info: bool = False,
             options: Optional[dict] = None,
     ):
+        self.mutate_parameters()
         GBM, BM = geometricBM(self.initial_asset_price, self.max_time, 1, self.info.mu, self.info.sigma)
         self._normalized_price = BM[0, :]
         self._standard_price = GBM[0, :]
         self.current_time = 0
-        self.portfolio_value = self.initial_portfolio_value
+        self.portfolio_value = np.array([
+            self.initial_estimator(self.initial_asset_price, self.info.strike_price, t + 1, self.info.r,
+                                   self.info.sigma) for t in range(self.max_time)])
         self.portfolio_value_history[0, :] = self.portfolio_value
 
         return self.describe_state(), self.info
-
-    def alter_initial_portfolio_value(self, initial_portfolio_value: np.ndarray):
-        self.initial_portfolio_value = initial_portfolio_value
 
     def render(self, mode="human"):
         if self.fig is None:
@@ -132,10 +129,12 @@ class RLOPEnv(gym.Env):
         for i in range(T):
             if i < tau:
                 payoff = util.payoff_of_option(self.is_call_option, self._standard_price[i + 1], self.info.strike_price)
-                ax_option.plot(np.arange(0, i + 2), self.portfolio_value_history[0:i + 2, i], label=f'#{i:d}', c=palette[i])
+                ax_option.plot(np.arange(0, i + 2), self.portfolio_value_history[0:i + 2, i], label=f'#{i:d}',
+                               c=palette[i])
                 ax_option.plot(i + 1, payoff, marker='+', c=palette[i])
             else:
-                ax_option.plot(np.arange(0, tau + 1), self.portfolio_value_history[0:tau + 1, i], label=f'#{i:d}', c=palette[i])
+                ax_option.plot(np.arange(0, tau + 1), self.portfolio_value_history[0:tau + 1, i], label=f'#{i:d}',
+                               c=palette[i])
         ax_option.set(xlim=[0, T], xlabel='time', ylabel='asset price')
 
         self.fig.canvas.draw_idle()
@@ -144,6 +143,17 @@ class RLOPEnv(gym.Env):
     def close(self):
         if self.fig is not None:
             plt.close(self.fig)
+
+    def mutate_parameters(self):
+        if np.random.rand(1) < self.mutation:
+            self.info.r = np.clip(self.info.r * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-3)
+        if np.random.rand(1) < self.mutation:
+            self.info.mu = np.clip(self.info.mu + 1e-3 * np.random.randn(1)[0] - 1 * self.info.mu, -1e-3, 1e-3)
+        if np.random.rand(1) < self.mutation:
+            self.info.sigma = np.clip(self.info.sigma * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-2)
+        if np.random.rand(1) < self.mutation:
+            self.info.strike_price = np.clip(
+                self.info.strike_price + 1e-2 * np.random.randn(1)[0] - 0.1 * (self.info.strike_price - 1), 0.9, 1.1)
 
 
 register(id='RLOP-v0', entry_point='rlop.env:RLOPEnv')
