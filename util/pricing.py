@@ -26,8 +26,7 @@ def bs_euro_vanilla_put(S, K, T, r, sigma):
     return put
 
 
-def optimal_hedging_position(S, K, T, r, sigma, option_func):
-    dS = 1e-6
+def optimal_hedging_position(S, K, T, r, sigma, option_func, dS=1e-6):
     dC = option_func(S + dS, K, T, r, sigma) - option_func(S, K, T, r, sigma)
     return dC / dS
 
