@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple, Iterable
 from unittest import TestCase
 
 import gym
@@ -14,13 +14,12 @@ from util.sample import geometricBM
 
 
 class Info:
-    def __init__(self, strike_price: np.sctypes, r: np.sctypes, mu: np.sctypes, sigma: np.sctypes,
-                 time_interval: np.sctypes):
+    def __init__(self, strike_price: np.sctypes, r: np.sctypes, mu: np.sctypes, sigma: np.sctypes, _dt: np.sctypes):
         self.strike_price = strike_price
         self.r = r
         self.mu = mu
         self.sigma = sigma
-        self.time_interval = time_interval
+        self._dt = _dt
 
 
 class State:
@@ -32,27 +31,53 @@ class State:
     def to_tensors(self, info):
         return [torch.tensor([
             self.normalized_asset_price,
-            (t + 1) * info.time_interval,
+            (t + 1) * info._dt,
             self.portfolio_value[t],
-            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, (t + 1) * info.time_interval),
+            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, t + 1, info._dt),
             info.r,
             info.mu,
             info.sigma
         ]).float() for t in range(self.remaining_time)]
 
 
+class SamplePool:
+    def __init__(self, max_time: int, size: int = 20):
+        self.size = size
+        self.max_time = max_time
+        self.counter = 0
+        self.gBM = np.empty((self.size, self.max_time+1))
+        self.BM = np.empty((self.size, self.max_time+1))
+
+    def update(self, initial_asset_price, mu, sigma, _dt):
+        self.initial_asset_price = initial_asset_price
+        self.mu = mu
+        self.sigma = sigma
+        self._dt = _dt
+
+    def next(self):
+        if self.counter >= self.size:
+            self.counter = 0
+            geometricBM(self.initial_asset_price, self.max_time, self.size, self.mu, self.sigma, self._dt,
+                        gBM_out=self.gBM, BM_out=self.BM)
+        GBM = self.gBM[self.counter, :]
+        BM = self.BM[self.counter, :]
+        self.counter += 1
+        return GBM, BM
+
+
 class RLOPEnv(gym.Env):
     def __init__(self, is_call_option: bool, strike_price: np.sctypes, max_time: int, mu: np.sctypes, sigma: np.sctypes,
                  r: np.sctypes, initial_estimator: InitialEstimator, initial_asset_price: np.sctypes, *,
-                 mutation: float = 0.01, time_interval: float = 1):
+                 mutation: float = 0.01, _dt: float = 1):
         # Environment constants, or stay constant for quite a long time
         self.is_call_option = is_call_option
         self.max_time = max_time
         self.initial_estimator = initial_estimator
         self.initial_asset_price = initial_asset_price
-        self.info = Info(strike_price, r, mu, sigma, time_interval)
+        self.info = Info(strike_price, r, mu, sigma, _dt)
         self.mutation = mutation
-        self.time_interval = time_interval
+        self._dt = _dt
+        self.sample_pool = SamplePool(self.max_time)
 
         # Episodic variables
         self.current_time = max_time
@@ -83,7 +108,7 @@ class RLOPEnv(gym.Env):
 
         # compute the cash position
         cash_tau = self.portfolio_value - action * S_tau
-        cash_t = cash_tau * np.exp(self.info.r * self.time_interval)
+        cash_t = cash_tau * np.exp(self.info.r * self._dt)
         portfolio_value_t = cash_t + action * S_t
 
         payoff = util.payoff_of_option(self.is_call_option, S_t, self.info.strike_price)
@@ -105,22 +130,25 @@ class RLOPEnv(gym.Env):
             options: Optional[dict] = None,
     ):
         self.mutate_parameters()
-        GBM, BM = geometricBM(self.initial_asset_price, self.max_time, 1, self.info.mu, self.info.sigma,
-                              self.time_interval)
-        self._normalized_price = BM[0, :]
-        self._standard_price = GBM[0, :]
+        self.sample_pool.update(self.initial_asset_price, self.info.mu, self.info.sigma, self._dt)
+        GBM, BM = self.sample_pool.next()
+        self._normalized_price = BM
+        self._standard_price = GBM
         self.current_time = 0
         self.portfolio_value = np.array([
             self.initial_estimator(self.initial_asset_price, self.info.strike_price, t + 1, self.info.r,
-                                   self.info.sigma) for t in range(self.max_time)])
+                                   self.info.sigma, self._dt) for t in range(self.max_time)])
         self.portfolio_value_history[0, :] = self.portfolio_value
 
         return self.describe_state(), self.info
 
-    def render(self, mode="human"):
-        if self.fig is None:
-            self.__init_render__()
-        ax_stock, ax_option = self.axs
+    def render(self, mode="human", axs=None):
+        if axs is not None and isinstance(axs, Iterable):
+            ax_stock, ax_option = axs
+        else:
+            if self.fig is None:
+                self.__init_render__()
+            ax_stock, ax_option = self.axs
         tau = self.current_time
         T = self.max_time
 
@@ -141,8 +169,8 @@ class RLOPEnv(gym.Env):
                                c=palette[i])
         ax_option.set(xlim=[0, T], xlabel='time', ylabel='asset price')
 
-        self.fig.canvas.draw_idle()
         plt.show(block=False)
+        plt.pause(0.0001)
 
     def close(self):
         if self.fig is not None:

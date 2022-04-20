@@ -1,4 +1,5 @@
 from itertools import chain
+from typing import Tuple
 from unittest import TestCase
 
 import numpy as np
@@ -107,10 +108,11 @@ class GaussianPolicy(Policy):
         self.theta_sigma.eval()
 
 
-def policy_gradient_for_stacked(env: Env, pi: GaussianPolicy, episode_n: int, *, plot: bool = False,
-                                last_day_train_only: bool = False, batch: bool = False):
+def policy_gradient_for_stacked(env: Env, pi: GaussianPolicy, episode_n: int, *, ax: plt.Axes = None,
+                                axs_env: Tuple[plt.Axes] = None, last_day_train_only: bool = False, batch: bool = False):
     avg_rewards = []
-    fig, ax = plt.subplots()
+    if ax is None:
+        fig, ax = plt.subplots()
     pbar = trange(episode_n)
     for e in pbar:
         states = []
@@ -122,8 +124,8 @@ def policy_gradient_for_stacked(env: Env, pi: GaussianPolicy, episode_n: int, *,
         while not done:
             action = pi.action(state, info)
             state, reward, done, _ = env.step(action)
-            if e == episode_n - 1 and plot:
-                env.render()
+            if e == episode_n - 1 and axs_env is not None:
+                env.render(axs=axs_env)
 
             states.append(state)
             actions.append(action)
@@ -149,7 +151,7 @@ def policy_gradient_for_stacked(env: Env, pi: GaussianPolicy, episode_n: int, *,
         avg_rewards.append(np.average(rewards))
         pbar.set_description(
             f'avg_r={avg_rewards[-1]:.2e};r={info.r:.4f};mu={info.mu:.4f};sigma={info.sigma:.4f};K={info.strike_price:.4f}')
-        if (e + 1) % 100 == 0 and plot:
+        if (e + 1) % 100 == 0 and ax is not None:
             indices = np.arange(0, e + 1)
             ax.cla()
             ax.plot(indices, np.array(avg_rewards) * (-1))
@@ -198,14 +200,14 @@ def policy_evaluation(env: Env, pi: Policy, episode_n: int, *, plot: bool = Fals
 class BSPolicy(Policy):
     def __init__(self, is_call: bool = True):
         super().__init__()
-        self.option_func = bs_euro_vanilla_call if is_call else bs_euro_vanilla_put
+        # self.option_func = bs_euro_vanilla_call if is_call else bs_euro_vanilla_put
         self.hedge_func = delta_hedge_bs_euro_vanilla_call if is_call else delta_hedge_bs_euro_vanilla_put
 
     def action(self, state, info):
         S = util.normalized_to_standard_price(state.normalized_asset_price, info.mu, info.sigma,
-                                              state.remaining_time * info.time_interval)
+                                              state.remaining_time, info._dt)
         K = info.strike_price
-        return self.hedge_func(S, K, (np.arange(state.remaining_time) + 1) * info.time_interval, info.r, info.sigma)
+        return self.hedge_func(S, K, np.arange(state.remaining_time) + 1, info.r, info.sigma, info._dt)
 
     def update(self, delta: np.sctypes, action, state, info, *args):
         raise Exception('BS policy cannot be updated!')
@@ -213,9 +215,9 @@ class BSPolicy(Policy):
 
 class BSInitialEstimator(InitialEstimator):
     def __call__(self, initial_asset_price: float, strike_price: float, remaining_time: int, r: float,
-                 sigma: float) -> float:
+                 sigma: float, _dt: float) -> float:
         return (bs_euro_vanilla_call if self.is_call_option else bs_euro_vanilla_put)(
-            initial_asset_price, strike_price, remaining_time, r, sigma
+            initial_asset_price, strike_price, remaining_time, r, sigma, _dt
         )
 
 
@@ -240,7 +242,7 @@ class Test(TestCase):
                       initial_asset_price=initial_asset_price)
 
         pi = GaussianPolicy(5e-3)
-        avg_rewards = policy_gradient_for_stacked(env, pi, itr, plot=True, batch=True, last_day_train_only=False)
+        avg_rewards = policy_gradient_for_stacked(env, pi, itr, axs_env=True, batch=True, last_day_train_only=False)
         print(f'mean: {np.mean(avg_rewards):.2e}, std: {np.std(avg_rewards):.2e}')
 
     def test_cumulative_training(self):
@@ -252,9 +254,12 @@ class Test(TestCase):
         is_call_option = True
         initial_asset_price = 1
         max_time = 3
-        itr = 2000
+        itr = 10000
 
+        fig, ax = plt.subplots()
+        _, axs_env = plt.subplots(2, 1)
         with Timer(desc=f'cumulative training for {max_time} levels'):
+            pi = GaussianPolicy(1e-3)
             for sub_max_time in range(1, max_time + 1):
                 strike_price = 1.000
                 mu = 1.0e-3
@@ -265,8 +270,7 @@ class Test(TestCase):
                               sigma=sigma, r=r, initial_estimator=BSInitialEstimator(is_call_option),
                               initial_asset_price=initial_asset_price)
 
-                pi = GaussianPolicy(1e-3)
-                policy_gradient_for_stacked(env, pi, itr, plot=True, last_day_train_only=True)
+                policy_gradient_for_stacked(env, pi, itr, ax=ax, axs_env=axs_env, last_day_train_only=True)
         plt.show(block=True)
 
     def test_BS_error(self):
@@ -281,19 +285,19 @@ class Test(TestCase):
         itr = 200
 
         strike_price = 1.000
-        mu = 0.0e-3
+        mu = 1.0e-3
         sigma = 1e-2
-        r = 0.0e-3
-        dt = 0.01
+        r = 1.0e-3
+        _dt = 1
         T = 10
 
-        max_time = int(np.round(T / dt))
+        max_time = int(np.round(T / _dt))
 
         env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=max_time, mu=mu, sigma=sigma,
                       r=r, initial_estimator=BSInitialEstimator(is_call_option),
-                      initial_asset_price=initial_asset_price, mutation=0)
+                      initial_asset_price=initial_asset_price, mutation=0, _dt=_dt)
         pi = BSPolicy(is_call=is_call_option)
         with Timer(desc=f'BS baseline for {itr} iterations'):
-            avg_rewards = policy_evaluation(env, pi, itr, plot=False)
+            avg_rewards = policy_evaluation(env, pi, itr, axs_env=False)
         print(f'mean: {np.mean(avg_rewards):.2e}, std: {np.std(avg_rewards):.2e}')
         plt.show(block=True)

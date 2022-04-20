@@ -28,5 +28,5 @@ class InitialEstimator:
         self.is_call_option = is_call_option
 
     def __call__(self, initial_asset_price: float, strike_price: float, remaining_time: int, r: float,
-                 sigma: float) -> float:
+                 sigma: float, _dt: float) -> float:
         pass

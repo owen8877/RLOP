@@ -13,12 +13,12 @@ from util.sample import geometricBM
 
 
 class Info:
-    def __init__(self, strike_price: float, r: float, mu: float, sigma: float, time_interval: float):
+    def __init__(self, strike_price: float, r: float, mu: float, sigma: float, _dt: float):
         self.strike_price = strike_price
         self.r = r
         self.mu = mu
         self.sigma = sigma
-        self.time_interval = time_interval
+        self._dt = _dt
 
 
 class State:
@@ -29,9 +29,8 @@ class State:
     def to_tensor(self, info: Info):
         return torch.tensor((
             self.normalized_asset_price,
-            self.remaining_time * info.time_interval,
-            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma,
-                                              self.remaining_time * info.time_interval),
+            self.remaining_time * info._dt,
+            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, self.remaining_time, info._dt),
             info.r,
             info.mu,
             info.sigma
@@ -39,15 +38,15 @@ class State:
 
 
 class HedgeEnv:
-    def __init__(self, remaining_till, is_call_option, time_interval: float = 1):
+    def __init__(self, remaining_till, is_call_option, _dt: float = 1):
         self.state = State(0, 0)
         self.remaining_till = remaining_till
         self.is_call_option = is_call_option
-        self.time_interval = time_interval
+        self._dt = _dt
 
     def reset(self, info: Info, asset_normalized_prices: np.ndarray, asset_standard_prices: np.ndarray):
         self.info = info
-        self.gamma = np.exp(-self.info.r)
+        self.gamma = np.exp(-self.info.r * self._dt)
         self.asset_normalized_prices = asset_normalized_prices
         self.asset_standard_prices = asset_standard_prices
 
@@ -88,14 +87,14 @@ class QLBSEnv(gym.Env):
 class BSPolicy(Policy):
     def __init__(self, is_call: bool = True):
         super().__init__()
-        self.option_func = bs_euro_vanilla_call if is_call else bs_euro_vanilla_put
+        # self.option_func = bs_euro_vanilla_call if is_call else bs_euro_vanilla_put
         self.hedge_func = delta_hedge_bs_euro_vanilla_call if is_call else delta_hedge_bs_euro_vanilla_put
 
     def action(self, state, info):
         S = util.normalized_to_standard_price(state.normalized_asset_price, info.mu, info.sigma,
-                                              state.remaining_time * info.time_interval)
+                                              state.remaining_time, info._dt)
         K = info.strike_price
-        return self.hedge_func(S, K, state.remaining_time * info.time_interval, info.r, info.sigma)
+        return self.hedge_func(S, K, state.remaining_time, info.r, info.sigma, info._dt)
 
     def update(self, delta: np.sctypes, action, state, info, *args):
         raise Exception('BS policy cannot be updated!')
@@ -103,9 +102,9 @@ class BSPolicy(Policy):
 
 class BSInitialEstimator(InitialEstimator):
     def __call__(self, initial_asset_price: float, strike_price: float, remaining_time: int, r: float,
-                 sigma: float) -> float:
+                 sigma: float, _dt: float) -> float:
         return (bs_euro_vanilla_call if self.is_call_option else bs_euro_vanilla_put)(
-            initial_asset_price, strike_price, remaining_time, r, sigma
+            initial_asset_price, strike_price, remaining_time, r, sigma, _dt
         )
 
 
@@ -126,9 +125,9 @@ class Test(TestCase):
         initial_price = 1
         strike_price = 1.001
         T = 10
-        dt = 0.01
+        _dt = 0.01
 
-        max_time = int(np.round(T / dt))
+        max_time = int(np.round(T / _dt))
         env = HedgeEnv(remaining_till=max_time, is_call_option=is_call_option)
         bs_pi = BSPolicy(is_call=is_call_option)
         bs_estimator = BSInitialEstimator(is_call_option)
@@ -136,15 +135,16 @@ class Test(TestCase):
         initial_errors = []
         linf_errors = []
         for _ in trange(10):
-            standard_prices, normalized_prices = geometricBM(initial_price, max_time, 1, mu, sigma, dt)
+            standard_prices, normalized_prices = geometricBM(initial_price, max_time, 1, mu, sigma, _dt)
             standard_prices = standard_prices[0, :]
             normalized_prices = normalized_prices[0, :]
-            info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma, time_interval=dt)
+            info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma, _dt=_dt)
             state = env.reset(info, normalized_prices, standard_prices)
             done = False
 
             bs_option_prices = np.array(
-                [bs_estimator(standard_prices[t], strike_price, (max_time - t) * dt, r, sigma) for t in range(max_time + 1)])
+                [bs_estimator(standard_prices[t], strike_price, max_time - t, r, sigma, _dt) for t in
+                 range(max_time + 1)])
 
             pvs = np.zeros(max_time + 1)
             hedges = np.zeros(max_time + 1)
