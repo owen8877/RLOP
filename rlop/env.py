@@ -14,11 +14,13 @@ from util.sample import geometricBM
 
 
 class Info:
-    def __init__(self, strike_price: np.sctypes, r: np.sctypes, mu: np.sctypes, sigma: np.sctypes):
+    def __init__(self, strike_price: np.sctypes, r: np.sctypes, mu: np.sctypes, sigma: np.sctypes,
+                 time_interval: np.sctypes):
         self.strike_price = strike_price
         self.r = r
         self.mu = mu
         self.sigma = sigma
+        self.time_interval = time_interval
 
 
 class State:
@@ -30,9 +32,9 @@ class State:
     def to_tensors(self, info):
         return [torch.tensor([
             self.normalized_asset_price,
-            t + 1,
+            (t + 1) * info.time_interval,
             self.portfolio_value[t],
-            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, t + 1),
+            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, (t + 1) * info.time_interval),
             info.r,
             info.mu,
             info.sigma
@@ -42,14 +44,15 @@ class State:
 class RLOPEnv(gym.Env):
     def __init__(self, is_call_option: bool, strike_price: np.sctypes, max_time: int, mu: np.sctypes, sigma: np.sctypes,
                  r: np.sctypes, initial_estimator: InitialEstimator, initial_asset_price: np.sctypes, *,
-                 mutation: float = 0.01):
+                 mutation: float = 0.01, time_interval: float = 1):
         # Environment constants, or stay constant for quite a long time
         self.is_call_option = is_call_option
         self.max_time = max_time
         self.initial_estimator = initial_estimator
         self.initial_asset_price = initial_asset_price
-        self.info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma)
+        self.info = Info(strike_price, r, mu, sigma, time_interval)
         self.mutation = mutation
+        self.time_interval = time_interval
 
         # Episodic variables
         self.current_time = max_time
@@ -80,7 +83,7 @@ class RLOPEnv(gym.Env):
 
         # compute the cash position
         cash_tau = self.portfolio_value - action * S_tau
-        cash_t = cash_tau * np.exp(self.info.r)
+        cash_t = cash_tau * np.exp(self.info.r * self.time_interval)
         portfolio_value_t = cash_t + action * S_t
 
         payoff = util.payoff_of_option(self.is_call_option, S_t, self.info.strike_price)
@@ -102,7 +105,8 @@ class RLOPEnv(gym.Env):
             options: Optional[dict] = None,
     ):
         self.mutate_parameters()
-        GBM, BM = geometricBM(self.initial_asset_price, self.max_time, 1, self.info.mu, self.info.sigma)
+        GBM, BM = geometricBM(self.initial_asset_price, self.max_time, 1, self.info.mu, self.info.sigma,
+                              self.time_interval)
         self._normalized_price = BM[0, :]
         self._standard_price = GBM[0, :]
         self.current_time = 0

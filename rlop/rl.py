@@ -13,7 +13,8 @@ import util
 from rlop.env import RLOPEnv
 from rlop.interface import Policy, InitialEstimator
 from util.net import ResNet
-from util.pricing import bs_euro_vanilla_call, bs_euro_vanilla_put, optimal_hedging_position
+from util.pricing import bs_euro_vanilla_call, bs_euro_vanilla_put, delta_hedge_bs_euro_vanilla_call, \
+    delta_hedge_bs_euro_vanilla_put
 
 
 class GaussianPolicy(Policy):
@@ -198,11 +199,13 @@ class BSPolicy(Policy):
     def __init__(self, is_call: bool = True):
         super().__init__()
         self.option_func = bs_euro_vanilla_call if is_call else bs_euro_vanilla_put
+        self.hedge_func = delta_hedge_bs_euro_vanilla_call if is_call else delta_hedge_bs_euro_vanilla_put
 
     def action(self, state, info):
-        S = util.normalized_to_standard_price(state.normalized_asset_price, info.mu, info.sigma, state.remaining_time)
+        S = util.normalized_to_standard_price(state.normalized_asset_price, info.mu, info.sigma,
+                                              state.remaining_time * info.time_interval)
         K = info.strike_price
-        return optimal_hedging_position(S, K, np.arange(state.remaining_time) + 1, info.r, info.sigma, self.option_func)
+        return self.hedge_func(S, K, (np.arange(state.remaining_time) + 1) * info.time_interval, info.r, info.sigma)
 
     def update(self, delta: np.sctypes, action, state, info, *args):
         raise Exception('BS policy cannot be updated!')
@@ -274,19 +277,23 @@ class Test(TestCase):
 
         is_call_option = True
         initial_asset_price = 1
-        max_time = 3
-        itr = 2000
+
+        itr = 200
 
         strike_price = 1.000
-        mu = 1.0e-3
+        mu = 0.0e-3
         sigma = 1e-2
-        r = 1.0e-3
+        r = 0.0e-3
+        dt = 0.01
+        T = 10
+
+        max_time = int(np.round(T / dt))
 
         env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=max_time, mu=mu, sigma=sigma,
                       r=r, initial_estimator=BSInitialEstimator(is_call_option),
-                      initial_asset_price=initial_asset_price, mutation=0.1)
+                      initial_asset_price=initial_asset_price, mutation=0)
         pi = BSPolicy(is_call=is_call_option)
         with Timer(desc=f'BS baseline for {itr} iterations'):
-            avg_rewards = policy_evaluation(env, pi, itr, plot=True)
+            avg_rewards = policy_evaluation(env, pi, itr, plot=False)
         print(f'mean: {np.mean(avg_rewards):.2e}, std: {np.std(avg_rewards):.2e}')
         plt.show(block=True)

@@ -7,16 +7,18 @@ import torch
 
 import util
 from qlbs.interface import Policy, InitialEstimator
-from util.pricing import bs_euro_vanilla_call, bs_euro_vanilla_put, optimal_hedging_position
+from util.pricing import bs_euro_vanilla_call, bs_euro_vanilla_put, delta_hedge_bs_euro_vanilla_put, \
+    delta_hedge_bs_euro_vanilla_call
 from util.sample import geometricBM
 
 
 class Info:
-    def __init__(self, strike_price: float, r: float, mu: float, sigma: float):
+    def __init__(self, strike_price: float, r: float, mu: float, sigma: float, time_interval: float):
         self.strike_price = strike_price
         self.r = r
         self.mu = mu
         self.sigma = sigma
+        self.time_interval = time_interval
 
 
 class State:
@@ -27,8 +29,9 @@ class State:
     def to_tensor(self, info: Info):
         return torch.tensor((
             self.normalized_asset_price,
-            self.remaining_time,
-            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, self.remaining_time),
+            self.remaining_time * info.time_interval,
+            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma,
+                                              self.remaining_time * info.time_interval),
             info.r,
             info.mu,
             info.sigma
@@ -36,10 +39,11 @@ class State:
 
 
 class HedgeEnv:
-    def __init__(self, remaining_till, is_call_option):
+    def __init__(self, remaining_till, is_call_option, time_interval: float = 1):
         self.state = State(0, 0)
         self.remaining_till = remaining_till
         self.is_call_option = is_call_option
+        self.time_interval = time_interval
 
     def reset(self, info: Info, asset_normalized_prices: np.ndarray, asset_standard_prices: np.ndarray):
         self.info = info
@@ -85,13 +89,13 @@ class BSPolicy(Policy):
     def __init__(self, is_call: bool = True):
         super().__init__()
         self.option_func = bs_euro_vanilla_call if is_call else bs_euro_vanilla_put
+        self.hedge_func = delta_hedge_bs_euro_vanilla_call if is_call else delta_hedge_bs_euro_vanilla_put
 
     def action(self, state, info):
         S = util.normalized_to_standard_price(state.normalized_asset_price, info.mu, info.sigma,
-                                              state.remaining_time)
+                                              state.remaining_time * info.time_interval)
         K = info.strike_price
-        return optimal_hedging_position(S, K, np.arange(state.remaining_time) + 1, info.r, info.sigma,
-                                        self.option_func, dS=1e-6)
+        return self.hedge_func(S, K, state.remaining_time * info.time_interval, info.r, info.sigma)
 
     def update(self, delta: np.sctypes, action, state, info, *args):
         raise Exception('BS policy cannot be updated!')
@@ -109,43 +113,52 @@ class Test(TestCase):
     def test_hedge_env(self):
         from matplotlib import pyplot as plt
         import matplotlib as mpl
+        from tqdm import trange
         import seaborn as sns
+        import pandas as pd
         mpl.use('TkAgg')
         sns.set_style('whitegrid')
 
         is_call_option = True
         r = 0e-3
         mu = 0e-3
-        sigma = 1e-2
+        sigma = 5e-3
         initial_price = 1
         strike_price = 1.001
+        T = 10
+        dt = 0.01
 
-        max_time = 10
+        max_time = int(np.round(T / dt))
         env = HedgeEnv(remaining_till=max_time, is_call_option=is_call_option)
         bs_pi = BSPolicy(is_call=is_call_option)
         bs_estimator = BSInitialEstimator(is_call_option)
 
-        while True:
-            standard_prices, normalized_prices = geometricBM(initial_price, max_time, 1, mu, sigma)
+        initial_errors = []
+        linf_errors = []
+        for _ in trange(10):
+            standard_prices, normalized_prices = geometricBM(initial_price, max_time, 1, mu, sigma, dt)
             standard_prices = standard_prices[0, :]
             normalized_prices = normalized_prices[0, :]
-            info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma)
+            info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma, time_interval=dt)
             state = env.reset(info, normalized_prices, standard_prices)
             done = False
 
             bs_option_prices = np.array(
-                [bs_estimator(standard_prices[t], strike_price, max_time - t, r, sigma) for t in range(max_time + 1)])
+                [bs_estimator(standard_prices[t], strike_price, (max_time - t) * dt, r, sigma) for t in range(max_time + 1)])
 
             pvs = np.zeros(max_time + 1)
             hedges = np.zeros(max_time + 1)
             pvs[-1] = util.payoff_of_option(is_call_option, standard_prices[-1], strike_price)
             while not done:
-                hedge = bs_pi.action(state, info)[0]
+                hedge = bs_pi.action(state, info)
                 state, pv, in_position_change, done = env.step(hedge)
                 pvs[-state.remaining_time] = pv
                 hedges[-state.remaining_time] = hedge
 
-            fig, (ax_price, ax_option, ax_hedge) = plt.subplots(3, 1, figsize=(8, 10))
+            initial_errors.append(pvs[0] - bs_option_prices[0])
+            linf_errors.append(np.linalg.norm(pvs - bs_option_prices, ord=np.inf))
+
+            fig, (ax_price, ax_option, ax_hedge) = plt.subplots(3, 1, figsize=(4, 5))
             times = np.arange(0, max_time + 1)
             ax_price.plot(times, standard_prices)
             ax_price.set(ylabel='stock price')
@@ -155,3 +168,6 @@ class Test(TestCase):
             ax_hedge.plot(times, hedges)
 
             plt.show(block=True)
+
+        sns.histplot(pd.DataFrame({'initial': initial_errors, 'inf': linf_errors}))
+        plt.show(block=True)

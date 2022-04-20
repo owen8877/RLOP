@@ -44,7 +44,7 @@ r = 0e-3
 sigma = 1e-2
 
 T = 10  # terminal time in real time scale
-dt = 0.001
+dt = 0.01
 
 steps_n = int(np.round(T / dt))
 samples_n = 1000
