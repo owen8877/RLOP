@@ -44,7 +44,7 @@ class Policy:
 
     def batch_action(self, state_info_tensor):
         """
-        :param state_info_tensor: [[normal_price, strike_price, r, mu, sigma, remaining_real_time, risk_lambda]]
+        :param state_info_tensor: [[normal_price, remaining_real_time, strike_price, r, mu, sigma, risk_lambda]]
         :return:
         """
         raise NotImplementedError
@@ -117,11 +117,11 @@ class QLBSEnv(gym.Env):
             # now at time s, ask the policy to generate batch actions
             sit = torch.empty((RS, 7))
             sit[:, 0] = torch.tensor(GBM[:, s - t])  # normal_price
-            sit[:, 1] = self.info.strike_price  # strike_price
-            sit[:, 2] = self.info.r  # r
-            sit[:, 3] = self.info.mu  # mu
-            sit[:, 4] = self.info.sigma  # sigma
-            sit[:, 5] = (self.max_time - t) * self.info._dt  # remaining_real_time
+            sit[:, 1] = (self.max_time - t) * self.info._dt  # remaining_real_time
+            sit[:, 2] = self.info.strike_price  # strike_price
+            sit[:, 3] = self.info.r  # r
+            sit[:, 4] = self.info.mu  # mu
+            sit[:, 5] = self.info.sigma  # sigma
             sit[:, 6] = self.info.risk_lambda  # risk_lambda
             hedge[:, s - t] = pi.batch_action(sit)
 

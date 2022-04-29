@@ -24,6 +24,7 @@ class GaussianPolicy(Policy):
         self.optimizer = Adam(chain(self.theta_mu.parameters(), self.theta_sigma.parameters()), lr=alpha)
 
     def _gauss_param(self, tensor):
+        tensor = tensor.float()
         mu = self.theta_mu(tensor)
         sigma = self.theta_sigma(tensor)
 
@@ -38,7 +39,7 @@ class GaussianPolicy(Policy):
         tensor = state.to_tensor(info)
         with torch.no_grad():
             mu, sigma = self._gauss_param(tensor)
-            return np.random.randn(1) * float(sigma) + float(mu)
+            return float(np.random.randn(1)) * float(sigma) + float(mu)
 
     def update(self, delta, action, state, info):
         tensor = state.to_tensor(info)
@@ -52,6 +53,15 @@ class GaussianPolicy(Policy):
 
         self.optimizer.zero_grad()
         self.optimizer.step(lambda: loss(delta, action, tensor))
+
+    def batch_action(self, state_info_tensor):
+        """
+        :param state_info_tensor: [[normal_price, remaining_real_time, strike_price, r, mu, sigma, risk_lambda]]
+        :return:
+        """
+        with torch.no_grad():
+            mu, sigma = self._gauss_param(state_info_tensor)
+            return torch.randn(len(mu)) * sigma[:, 0] + mu[:, 0]
 
     def _save_path(self, filename: str):
         return f'data/{filename}.pt'
@@ -80,13 +90,13 @@ class NNBaseline(Baseline):
     def __call__(self, state: State, info: Info):
         tensor = state.to_tensor(info)
         with torch.no_grad():
-            return self.net(tensor)
+            return float(self.net(tensor.float()))
 
     def update(self, delta: float, state: State, info: Info):
         tensor = state.to_tensor(info)
 
         def loss(delta, tensor):
-            loss = -delta * self.net(tensor)
+            loss = -delta * self.net(tensor.float())
             loss.backward()
             return loss
 
@@ -111,13 +121,14 @@ def policy_gradient(env: Env, pi: Policy, V: Baseline, episode_n: int, *, ax: pl
         states.append(state)
         while not done:
             action = pi.action(state, info)
-            state, reward, done, _ = env.step(action)
+            state, reward, done, additional = env.step(action, pi)
             if e == episode_n - 1 and axs_env is not None:
                 env.render(axs=axs_env)
 
             states.append(state)
             actions.append(action)
             rewards.append(reward)
+            risks.append(additional['risk'])
 
         if V is not None:
             T = len(actions)
@@ -258,13 +269,13 @@ class Test(TestCase):
         sns.set_style('whitegrid')
 
         is_call_option = True
-        r = 1e-1
+        r = 1e-2
         mu = 0e-3
-        sigma = 2e-1
+        sigma = 1e-1
         risk_lambda = 1
         initial_price = 1
         strike_price = 1
-        T = 10
+        T = 5
         _dt = 1
 
         max_time = int(np.round(T / _dt))
@@ -273,7 +284,7 @@ class Test(TestCase):
                       _dt=_dt, mutation=0)
         bs_pi = BSPolicy(is_call=is_call_option)
 
-        policy_gradient(env, bs_pi, None, episode_n=1000)
+        policy_gradient(env, bs_pi, None, episode_n=10000)
         plt.show()
 
     def test_gaussian_policy_training(self):
@@ -283,13 +294,13 @@ class Test(TestCase):
         sns.set_style('whitegrid')
 
         is_call_option = True
-        r = 1e-1
+        r = 1e-2
         mu = 0e-3
-        sigma = 2e-1
+        sigma = 1e-1
         risk_lambda = 1
         initial_price = 1
         strike_price = 1
-        T = 10
+        T = 5
         _dt = 1
 
         max_time = int(np.round(T / _dt))
@@ -299,5 +310,5 @@ class Test(TestCase):
         gaussian_pi = GaussianPolicy(alpha=1e-2)
         nnbaseline = NNBaseline(alpha=1e-2)
 
-        policy_gradient(env, gaussian_pi, nnbaseline, episode_n=1000)
+        policy_gradient(env, gaussian_pi, nnbaseline, episode_n=100000)
         plt.show()
