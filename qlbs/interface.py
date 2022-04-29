@@ -8,6 +8,13 @@ class Policy:
     def action(self, state, info):
         raise NotImplementedError
 
+    def batch_action(self, state_info_tensor):
+        """
+        :param state_info_tensor: [[normal_price, strike_price, r, mu, sigma, remaining_real_time, risk_lambda]]
+        :return:
+        """
+        raise NotImplementedError
+
     def update(self, delta: np.sctypes, action, state, info, *args):
         raise NotImplementedError
 

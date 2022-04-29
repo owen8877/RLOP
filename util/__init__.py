@@ -13,9 +13,9 @@ def normalized_to_standard_price(normalized_price: np.ndarray, mu: float, sigma:
 
 def payoff_of_option(is_call_option: bool, asset_price: np.sctypes, strike_price: np.sctypes):
     if is_call_option:
-        return np.max([0, asset_price - strike_price])
+        return np.clip(asset_price - strike_price, a_max=None, a_min=0)
     else:
-        return np.max([0, strike_price - asset_price])
+        return np.clip(strike_price - asset_price, a_max=None, a_min=0)
 
 
 def ensure_dir(path):

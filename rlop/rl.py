@@ -109,7 +109,8 @@ class GaussianPolicy(Policy):
 
 
 def policy_gradient_for_stacked(env: Env, pi: GaussianPolicy, episode_n: int, *, ax: plt.Axes = None,
-                                axs_env: Tuple[plt.Axes] = None, last_day_train_only: bool = False, batch: bool = False):
+                                axs_env: Tuple[plt.Axes] = None, last_day_train_only: bool = False,
+                                batch: bool = False):
     avg_rewards = []
     if ax is None:
         fig, ax = plt.subplots()
@@ -200,14 +201,14 @@ def policy_evaluation(env: Env, pi: Policy, episode_n: int, *, plot: bool = Fals
 class BSPolicy(Policy):
     def __init__(self, is_call: bool = True):
         super().__init__()
-        # self.option_func = bs_euro_vanilla_call if is_call else bs_euro_vanilla_put
-        self.hedge_func = delta_hedge_bs_euro_vanilla_call if is_call else delta_hedge_bs_euro_vanilla_put
+        self.is_call = is_call
 
     def action(self, state, info):
         S = util.normalized_to_standard_price(state.normalized_asset_price, info.mu, info.sigma,
                                               state.remaining_time, info._dt)
         K = info.strike_price
-        return self.hedge_func(S, K, np.arange(state.remaining_time) + 1, info.r, info.sigma, info._dt)
+        return (delta_hedge_bs_euro_vanilla_call if self.is_call else delta_hedge_bs_euro_vanilla_put)(
+            S, K, np.arange(state.remaining_time) + 1, info.r, info.sigma, info._dt)
 
     def update(self, delta: np.sctypes, action, state, info, *args):
         raise Exception('BS policy cannot be updated!')
