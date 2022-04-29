@@ -1,21 +1,105 @@
+from itertools import chain
 from typing import Tuple
 from unittest import TestCase
 
 import numpy as np
+import torch
 from gym import Env
 from matplotlib import pyplot as plt
+from torch.optim.adam import Adam
 from tqdm import trange
 
 import util
-from qlbs.env import State, Info, QLBSEnv
-from qlbs.interface import Policy
+from qlbs.env import State, Info, QLBSEnv, Policy, Baseline
+from util.net import ResNet
 from util.sample import geometricBM
 
 
-def policy_evaluation(env: Env, pi: Policy, episode_n: int, *, plot: bool = False):
+class GaussianPolicy(Policy):
+    def __init__(self, alpha):
+        super().__init__()
+        self.theta_mu = ResNet(7, 10, groups=2, layer_per_group=2)
+        self.theta_sigma = ResNet(7, 10, groups=2, layer_per_group=2)
+
+        self.optimizer = Adam(chain(self.theta_mu.parameters(), self.theta_sigma.parameters()), lr=alpha)
+
+    def _gauss_param(self, tensor):
+        mu = self.theta_mu(tensor)
+        sigma = self.theta_sigma(tensor)
+
+        mu_c = torch.sigmoid(mu)
+        sigma_s = torch.sigmoid(sigma)
+
+        sigma_c = torch.clip(sigma_s, 1e-1, 1)
+
+        return mu_c, sigma_c
+
+    def action(self, state, info):
+        tensor = state.to_tensor(info)
+        with torch.no_grad():
+            mu, sigma = self._gauss_param(tensor)
+            return np.random.randn(1) * float(sigma) + float(mu)
+
+    def update(self, delta, action, state, info):
+        tensor = state.to_tensor(info)
+
+        def loss(delta, a, tensor):
+            mu, sigma = self._gauss_param(tensor)
+            log_pi = - (a - mu) ** 2 / (2 * sigma ** 2) - torch.log(sigma)
+            loss = - delta * log_pi
+            loss.backward()
+            return loss
+
+        self.optimizer.zero_grad()
+        self.optimizer.step(lambda: loss(delta, action, tensor))
+
+    def _save_path(self, filename: str):
+        return f'data/{filename}.pt'
+
+    def save(self, filename: str):
+        util.ensure_dir(self._save_path(''))
+        torch.save({
+            'mu_net': self.theta_mu.state_dict(),
+            'sigma_net': self.theta_sigma.state_dict(),
+        }, self._save_path(filename))
+
+    def load(self, filename: str):
+        state_dict = torch.load(self._save_path(filename))
+        self.theta_mu.load_state_dict(state_dict['mu_net'])
+        self.theta_mu.eval()
+        self.theta_sigma.load_state_dict(state_dict['sigma_net'])
+        self.theta_sigma.eval()
+
+
+class NNBaseline(Baseline):
+    def __init__(self, alpha=1e-2):
+        super().__init__()
+        self.net = ResNet(7, 10, groups=2, layer_per_group=2)
+        self.optimizer = Adam(self.net.parameters(), lr=alpha)
+
+    def __call__(self, state: State, info: Info):
+        tensor = state.to_tensor(info)
+        with torch.no_grad():
+            return self.net(tensor)
+
+    def update(self, delta: float, state: State, info: Info):
+        tensor = state.to_tensor(info)
+
+        def loss(delta, tensor):
+            loss = -delta * self.net(tensor)
+            loss.backward()
+            return loss
+
+        self.optimizer.zero_grad()
+        self.optimizer.step(lambda: loss(delta, tensor))
+
+
+def policy_gradient(env: Env, pi: Policy, V: Baseline, episode_n: int, *, ax: plt.Axes = None,
+                    axs_env: Tuple[plt.Axes] = None):
     t0_returns = []
     t0_risks = []
-    fig, ax = plt.subplots()
+    if ax is None:
+        fig, ax = plt.subplots()
     pbar = trange(episode_n)
     for e in pbar:
         states = []
@@ -27,20 +111,34 @@ def policy_evaluation(env: Env, pi: Policy, episode_n: int, *, plot: bool = Fals
         states.append(state)
         while not done:
             action = pi.action(state, info)
-            state, reward, done, additional = env.step(action, pi)
-            if e == episode_n - 1 and plot:
-                env.render()
+            state, reward, done, _ = env.step(action)
+            if e == episode_n - 1 and axs_env is not None:
+                env.render(axs=axs_env)
 
             states.append(state)
             actions.append(action)
             rewards.append(reward)
-            risks.append(additional['risk'])
 
-        t0_returns.append(np.sum(rewards))
-        t0_risks.append(env.info.risk_lambda * np.dot(risks, np.power(env.gamma, np.arange(len(risks))[::-1])))
+        if V is not None:
+            T = len(actions)
+            G_tmp = 0
+            Gs_rev = []
+            for t in range(T - 1, -1, -1):
+                G_tmp = G_tmp * env.gamma + rewards[t]
+                Gs_rev.append(G_tmp)
+            Gs = Gs_rev[::-1]
+
+            for t in range(T):
+                delta = Gs[t] - V(states[t], info)
+                V.update(delta, states[t], info)
+                pi.update(delta * np.power(env.gamma, t), actions[t], states[t], info)
+
+        discount = np.power(env.gamma, np.arange(len(rewards))[::-1])
+        t0_returns.append(np.dot(rewards, discount))
+        t0_risks.append(env.info.risk_lambda * np.dot(risks, discount))
         pbar.set_description(
             f't0_return={t0_returns[-1]:.2e};t0_risks={t0_risks[-1]:.2e};r={info.r:.4f};mu={info.mu:.4f};sigma={info.sigma:.4f};K={info.strike_price:.4f}')
-        if (e + 1) % 100 == 0 and plot:
+        if (e + 1) % 100 == 0 and ax is not None:
             indices = np.arange(0, e + 1)
             ax.cla()
             option_price = np.array(t0_returns) * (-1)
@@ -175,5 +273,31 @@ class Test(TestCase):
                       _dt=_dt, mutation=0)
         bs_pi = BSPolicy(is_call=is_call_option)
 
-        policy_evaluation(env, bs_pi, episode_n=1000, plot=True)
+        policy_gradient(env, bs_pi, None, episode_n=1000)
+        plt.show()
+
+    def test_gaussian_policy_training(self):
+        import matplotlib as mpl
+        import seaborn as sns
+        mpl.use('TkAgg')
+        sns.set_style('whitegrid')
+
+        is_call_option = True
+        r = 1e-1
+        mu = 0e-3
+        sigma = 2e-1
+        risk_lambda = 1
+        initial_price = 1
+        strike_price = 1
+        T = 10
+        _dt = 1
+
+        max_time = int(np.round(T / _dt))
+        env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=max_time, mu=mu, sigma=sigma,
+                      r=r, risk_lambda=risk_lambda, initial_asset_price=initial_price, risk_simulation_paths=50,
+                      _dt=_dt, mutation=0)
+        gaussian_pi = GaussianPolicy(alpha=1e-2)
+        nnbaseline = NNBaseline(alpha=1e-2)
+
+        policy_gradient(env, gaussian_pi, nnbaseline, episode_n=1000)
         plt.show()

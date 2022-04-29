@@ -5,7 +5,6 @@ import numpy as np
 import torch
 
 import util
-from qlbs.interface import Policy
 from util.sample import geometricBM
 
 
@@ -34,6 +33,35 @@ class State:
             info.sigma,
             info.risk_lambda,
         ))
+
+
+class Policy:
+    def __init__(self):
+        pass
+
+    def action(self, state: State, info: Info):
+        raise NotImplementedError
+
+    def batch_action(self, state_info_tensor):
+        """
+        :param state_info_tensor: [[normal_price, strike_price, r, mu, sigma, remaining_real_time, risk_lambda]]
+        :return:
+        """
+        raise NotImplementedError
+
+    def update(self, delta: float, action: float, state: State, info: Info):
+        raise NotImplementedError
+
+
+class Baseline:
+    def __init__(self):
+        pass
+
+    def __call__(self, state: State, info: Info):
+        raise NotImplementedError
+
+    def update(self, delta: float, state: State, info: Info):
+        raise NotImplementedError
 
 
 class QLBSEnv(gym.Env):
