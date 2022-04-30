@@ -65,14 +65,14 @@ class Baseline:
 
 
 class QLBSEnv(gym.Env):
-    def __init__(self, is_call_option: bool, strike_price: float, max_time: int, mu: float, sigma: float, r: float,
+    def __init__(self, is_call_option: bool, strike_price: float, max_step: int, mu: float, sigma: float, r: float,
                  risk_lambda: float, initial_asset_price: float, risk_simulation_paths: int, *, mutation: float = 0.1,
                  _dt: float = 1):
         # Setting of the system; stays constant for a long time
         self.is_call_option = is_call_option
         self.info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma, risk_lambda=risk_lambda, _dt=_dt)
         self.gamma = np.exp(-r * _dt)
-        self.max_time = max_time
+        self.max_step = max_step
         self.initial_asset_price = initial_asset_price
         self.mutation = mutation
         self.risk_simulation_paths = risk_simulation_paths
@@ -80,62 +80,61 @@ class QLBSEnv(gym.Env):
         # State variables
         self._normalized_price = None
         self._standard_price = None
-        self.portfolio_value = 0
-        self.current_time = 0
+        self.current_step = 0
 
     def _describe(self):
-        return State(self._normalized_price[self.current_time], self.max_time - self.current_time)
+        return State(self._normalized_price[self.current_step], self.max_step - self.current_step)
 
     def reset(self) -> Tuple[State, Info]:
         self.mutate_parameters()
-        GBM, BM = geometricBM(self.initial_asset_price, self.max_time, 1, self.info.mu, self.info.sigma, self.info._dt)
+        GBM, BM = geometricBM(self.initial_asset_price, self.max_step, 1, self.info.mu, self.info.sigma, self.info._dt)
         self._normalized_price = BM[0, :]
         self._standard_price = GBM[0, :]
-        self.portfolio_value = util.payoff_of_option(self.is_call_option, self._standard_price[-1],
-                                                     self.info.strike_price)
-        self.current_time = self.max_time - 1
+        self.current_step = 0
 
         return self._describe(), self.info
 
     def step(self, action, pi: Policy) -> Tuple[State, float, bool, dict]:
-        t = self.current_time
-        S = self._standard_price[t]
-        S_new = self._standard_price[t + 1]
+        t = self.current_step
 
-        # base reward = change in portfolio value
-        base_reward = (self.gamma * S_new - S) * action
-
-        # simulate RS paths to compute Var[Pi_t|F_t]
+        # simulate RS paths to compute E[Pi_t|F_t], E[Pi_(t+1)|F_(t+1)], and Var[Pi_t|F_t]
         RS = self.risk_simulation_paths
-        t_arr = np.arange(self.max_time - t + 1) * self.info._dt
+        t_arr = np.arange(self.max_step - t + 1)
         t_arr_broad = np.broadcast_to(t_arr[np.newaxis, :], (RS, len(t_arr)))
-        GBM, _ = geometricBM(S, self.max_time - t, RS, self.info.mu, self.info.sigma, self.info._dt)
+        GBM, _ = geometricBM(self._standard_price[t], self.max_step - t, RS, self.info.mu, self.info.sigma,
+                             self.info._dt)
 
-        # compute hedging positions
-        hedge = np.empty((RS, self.max_time - t), dtype=float)
-        for s in np.arange(t, self.max_time):
-            # now at time s, ask the policy to generate batch actions
+        # Compute hedge position in a batch fashion
+        sits = []
+        for s in np.arange(t, self.max_step):
             sit = torch.empty((RS, 7))
             sit[:, 0] = torch.tensor(GBM[:, s - t])  # normal_price
-            sit[:, 1] = (self.max_time - t) * self.info._dt  # remaining_real_time
+            sit[:, 1] = (self.max_step - s) * self.info._dt  # remaining_real_time
             sit[:, 2] = self.info.strike_price  # strike_price
             sit[:, 3] = self.info.r  # r
             sit[:, 4] = self.info.mu  # mu
             sit[:, 5] = self.info.sigma  # sigma
             sit[:, 6] = self.info.risk_lambda  # risk_lambda
-            hedge[:, s - t] = pi.batch_action(sit)
+            sits.append(sit)
+        hedge_long = pi.batch_action(torch.cat(sits, dim=0))
+        hedge = hedge_long.reshape(RS, self.max_step - t, order='F')
+        hedge[:, 0] = action
 
-        discounted_S = np.exp(-self.info.r * t_arr_broad) * GBM
-        value_change = hedge * (discounted_S[:, 1:] - discounted_S[:, :-1])
-        tot_value_change = np.sum(value_change, axis=1)
-        end_portfolio_value = util.payoff_of_option(self.is_call_option, GBM[:, -1], self.info.strike_price)
-        t_portfolio_value = (end_portfolio_value * np.exp(-self.info.r * (self.max_time - t)) - tot_value_change)
-        risk = np.std(t_portfolio_value, ddof=1)
+        discounted_S = np.power(self.gamma, t_arr_broad) * GBM
+        discounted_value_change = hedge * (discounted_S[:, 1:] - discounted_S[:, :-1])
+        end_value = util.payoff_of_option(self.is_call_option, GBM[:, -1], self.info.strike_price)
+        total_value_change = np.sum(discounted_value_change, axis=1)
+        t_value = end_value * np.power(self.gamma, self.max_step - t) - total_value_change
+        tp1_value = (t_value + discounted_value_change[:, 0]) / self.gamma
+
+        base_reward = self.gamma * (1 - (t + 1) / self.max_step) * np.mean(tp1_value) - (
+                1 - t / self.max_step) * np.mean(t_value)
+        risk = np.std(t_value, ddof=1)
 
         # clean up and return
-        self.current_time = t - 1
-        done = self.current_time < 0
-        reward = base_reward - self.info.risk_lambda * risk
+        self.current_step = t + 1
+        done = self.current_step >= self.max_step
+        reward = base_reward - self.info.risk_lambda * risk * self.info._dt
         return self._describe(), reward, done, {'risk': risk}
 
     def render(self, mode='human'):

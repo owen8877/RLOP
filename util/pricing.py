@@ -29,7 +29,10 @@ def bs_euro_vanilla_call(S, K, T, r, sigma, _dt=1):
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T_clean) / (sigma * np.sqrt(T_clean))
     d2 = (np.log(S / K) + (r - 0.5 * sigma ** 2) * T_clean) / (sigma * np.sqrt(T_clean))
     call = S * si.norm.cdf(d1, 0.0, 1.0) - K * np.exp(-r * T_clean) * si.norm.cdf(d2, 0.0, 1.0)
-    call[T0_mask] = max(S - K, 0)
+    if isinstance(S, np.ndarray):
+        call[T0_mask] = np.clip(S[T0_mask] - K, a_max=None, a_min=0)
+    else:
+        call[T0_mask] = np.clip(S - K, a_max=None, a_min=0)
     return call[0] if is_T_scalar else call
 
 
@@ -49,7 +52,10 @@ def bs_euro_vanilla_put(S, K, T, r, sigma, _dt=1):
     d1 = (np.log(S / K) + (r + 0.5 * sigma * sigma) * T_clean) / (sigma * np.sqrt(T_clean))
     d2 = (np.log(S / K) + (r - 0.5 * sigma * sigma) * T_clean) / (sigma * np.sqrt(T_clean))
     put = K * np.exp(-r * T_clean) * si.norm.cdf(-d2, 0.0, 1.0) - S * si.norm.cdf(-d1, 0.0, 1.0)
-    put[T0_mask] = max(K - S, 0)
+    if isinstance(S, np.ndarray):
+        put[T0_mask] = np.clip(K - S[T0_mask], a_max=None, a_min=0)
+    else:
+        put[T0_mask] = np.clip(K - S, a_max=None, a_min=0)
     return put[0] if is_T_scalar else put
 
 

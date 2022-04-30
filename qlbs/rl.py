@@ -144,9 +144,9 @@ def policy_gradient(env: Env, pi: Policy, V: Baseline, episode_n: int, *, ax: pl
                 V.update(delta, states[t], info)
                 pi.update(delta * np.power(env.gamma, t), actions[t], states[t], info)
 
-        discount = np.power(env.gamma, np.arange(len(rewards))[::-1])
+        discount = np.power(env.gamma, np.arange(len(rewards)))
         t0_returns.append(np.dot(rewards, discount))
-        t0_risks.append(env.info.risk_lambda * np.dot(risks, discount))
+        t0_risks.append(env.info.risk_lambda * np.average(risks, weights=discount))
         pbar.set_description(
             f't0_return={t0_returns[-1]:.2e};t0_risks={t0_risks[-1]:.2e};r={info.r:.4f};mu={info.mu:.4f};sigma={info.sigma:.4f};K={info.strike_price:.4f}')
         if (e + 1) % 100 == 0 and ax is not None:
@@ -271,7 +271,7 @@ class Test(TestCase):
         is_call_option = True
         r = 1e-2
         mu = 0e-3
-        sigma = 1e-1
+        sigma = 1e-2
         risk_lambda = 1
         initial_price = 1
         strike_price = 1
@@ -279,7 +279,7 @@ class Test(TestCase):
         _dt = 1
 
         max_time = int(np.round(T / _dt))
-        env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=max_time, mu=mu, sigma=sigma,
+        env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=max_time, mu=mu, sigma=sigma,
                       r=r, risk_lambda=risk_lambda, initial_asset_price=initial_price, risk_simulation_paths=50,
                       _dt=_dt, mutation=0)
         bs_pi = BSPolicy(is_call=is_call_option)
@@ -304,7 +304,7 @@ class Test(TestCase):
         _dt = 1
 
         max_time = int(np.round(T / _dt))
-        env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=max_time, mu=mu, sigma=sigma,
+        env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=max_time, mu=mu, sigma=sigma,
                       r=r, risk_lambda=risk_lambda, initial_asset_price=initial_price, risk_simulation_paths=50,
                       _dt=_dt, mutation=0)
         gaussian_pi = GaussianPolicy(alpha=1e-2)
