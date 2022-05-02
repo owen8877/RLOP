@@ -38,7 +38,7 @@ class GaussianPolicy(Policy):
         return mu_c, sigma_c
 
     def action(self, state, info, state_info_tensors=None):
-        rt = state.remaining_time
+        rt = state.remaining_step
         positions = state.portfolio_value * 0
         tensors = state.to_tensors(info) if state_info_tensors is None else state_info_tensors
         with torch.no_grad():
@@ -205,10 +205,10 @@ class BSPolicy(Policy):
 
     def action(self, state, info):
         S = util.normalized_to_standard_price(state.normalized_asset_price, info.mu, info.sigma,
-                                              state.remaining_time, info._dt)
+                                              state.remaining_step, info._dt)
         K = info.strike_price
         return (delta_hedge_bs_euro_vanilla_call if self.is_call else delta_hedge_bs_euro_vanilla_put)(
-            S, K, np.arange(state.remaining_time) + 1, info.r, info.sigma, info._dt)
+            S, K, np.arange(state.remaining_step) + 1, info.r, info.sigma, info._dt)
 
     def update(self, delta: np.sctypes, action, state, info, *args):
         raise Exception('BS policy cannot be updated!')

@@ -24,10 +24,11 @@ def geometricBM(S0: float, steps_n: int, samples_n: int, mu: float, sigma: float
     r = np.random.randn(samples_n, steps_n) * np.sqrt(_dt)
     BM_out[:, 0] = 0
     np.cumsum(r, axis=1, out=BM_out[:, 1:])
+    BM_out += np.log(S0) / sigma
 
     adjusted_mu = mu - sigma ** 2 / 2
     t_arr = np.broadcast_to(np.arange(steps_n + 1)[np.newaxis, :] * _dt, (samples_n, steps_n + 1))
-    gBM_out[:, :] = S0 * np.exp(adjusted_mu * t_arr + sigma * BM_out)
+    gBM_out[:, :] = np.exp(adjusted_mu * t_arr + sigma * BM_out)
 
     return gBM_out, BM_out
 

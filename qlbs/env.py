@@ -19,15 +19,18 @@ class Info:
 
 
 class State:
-    def __init__(self, normalized_asset_price: float, remaining_time: int):
+    def __init__(self, normalized_asset_price: float, passed_step: int, remaining_step: int):
         self.normalized_asset_price = normalized_asset_price
-        self.remaining_time = remaining_time
+        self.passed_step = passed_step
+        self.remaining_step = remaining_step
 
     def to_tensor(self, info: Info):
         return torch.tensor((
             self.normalized_asset_price,
-            self.remaining_time * info._dt,
-            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, self.remaining_time, info._dt),
+            self.passed_step * info._dt,
+            self.remaining_step * info._dt,
+            util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma,
+                                              (self.passed_step + self.remaining_step), 1),
             info.r,
             info.mu,
             info.sigma,
@@ -44,12 +47,16 @@ class Policy:
 
     def batch_action(self, state_info_tensor):
         """
-        :param state_info_tensor: [[normal_price, remaining_real_time, strike_price, r, mu, sigma, risk_lambda]]
+        :param state_info_tensor: [[normal_price, passed_real_time, remaining_real_time, normal_strike_price, r, mu,
+            sigma, risk_lambda]]
         :return:
         """
         raise NotImplementedError
 
     def update(self, delta: float, action: float, state: State, info: Info):
+        raise NotImplementedError
+
+    def train_based_on(self, source, target, lr, itr_max):
         raise NotImplementedError
 
 
@@ -60,7 +67,18 @@ class Baseline:
     def __call__(self, state: State, info: Info):
         raise NotImplementedError
 
-    def update(self, delta: float, state: State, info: Info):
+    def batch_estimate(self, state_info_tensor):
+        """
+        :param state_info_tensor: [[normal_price, passed_real_time, remaining_real_time, normal_strike_price, r, mu,
+            sigma, risk_lambda]]
+        :return:
+        """
+        raise NotImplementedError
+
+    def update(self, G: float, state: State, info: Info):
+        raise NotImplementedError
+
+    def train_based_on(self, source, target, lr, itr_max):
         raise NotImplementedError
 
 
@@ -83,7 +101,7 @@ class QLBSEnv(gym.Env):
         self.current_step = 0
 
     def _describe(self):
-        return State(self._normalized_price[self.current_step], self.max_step - self.current_step)
+        return State(self._normalized_price[self.current_step], self.current_step, self.max_step - self.current_step)
 
     def reset(self) -> Tuple[State, Info]:
         self.mutate_parameters()
@@ -101,20 +119,22 @@ class QLBSEnv(gym.Env):
         RS = self.risk_simulation_paths
         t_arr = np.arange(self.max_step - t + 1)
         t_arr_broad = np.broadcast_to(t_arr[np.newaxis, :], (RS, len(t_arr)))
-        GBM, _ = geometricBM(self._standard_price[t], self.max_step - t, RS, self.info.mu, self.info.sigma,
-                             self.info._dt)
+        GBM, BM = geometricBM(self._standard_price[t], self.max_step - t, RS, self.info.mu, self.info.sigma,
+                              self.info._dt)
 
         # Compute hedge position in a batch fashion
         sits = []
         for s in np.arange(t, self.max_step):
-            sit = torch.empty((RS, 7))
-            sit[:, 0] = torch.tensor(GBM[:, s - t])  # normal_price
-            sit[:, 1] = (self.max_step - s) * self.info._dt  # remaining_real_time
-            sit[:, 2] = self.info.strike_price  # strike_price
-            sit[:, 3] = self.info.r  # r
-            sit[:, 4] = self.info.mu  # mu
-            sit[:, 5] = self.info.sigma  # sigma
-            sit[:, 6] = self.info.risk_lambda  # risk_lambda
+            sit = torch.empty((RS, 8))
+            sit[:, 0] = torch.tensor(BM[:, s - t])  # normal_price
+            sit[:, 1] = s * self.info._dt  # passed_real_time
+            sit[:, 2] = (self.max_step - s) * self.info._dt  # remaining_real_time
+            sit[:, 3] = util.standard_to_normalized_price(self.info.strike_price, self.info.mu, self.info.sigma,
+                                                          self.max_step, self.info._dt)  # normal_strike_price
+            sit[:, 4] = self.info.r  # r
+            sit[:, 5] = self.info.mu  # mu
+            sit[:, 6] = self.info.sigma  # sigma
+            sit[:, 7] = self.info.risk_lambda  # risk_lambda
             sits.append(sit)
         hedge_long = pi.batch_action(torch.cat(sits, dim=0))
         hedge = hedge_long.reshape(RS, self.max_step - t, order='F')
@@ -123,6 +143,15 @@ class QLBSEnv(gym.Env):
         discounted_S = np.power(self.gamma, t_arr_broad) * GBM
         discounted_value_change = hedge * (discounted_S[:, 1:] - discounted_S[:, :-1])
         end_value = util.payoff_of_option(self.is_call_option, GBM[:, -1], self.info.strike_price)
+
+        # cum_value_change = np.cumsum(discounted_value_change[:, ::-1], axis=1)[:, ::-1]
+        # discounted_value = np.broadcast_to(end_value[:, None], (RS, self.max_step - t)) * np.power(self.gamma,
+        #                                                                                            self.max_step - t) - cum_value_change
+        # value = discounted_value / np.power(self.gamma, t_arr_broad[:, :-1])
+        # from qlbs.bs import BSInitialEstimator
+        # estimate = BSInitialEstimator(self.is_call_option)(GBM, self.info.strike_price, t_arr_broad[:, ::-1],
+        #                                                    self.info.r, self.info.sigma, self.info._dt)
+
         total_value_change = np.sum(discounted_value_change, axis=1)
         t_value = end_value * np.power(self.gamma, self.max_step - t) - total_value_change
         tp1_value = (t_value + discounted_value_change[:, 0]) / self.gamma
@@ -141,12 +170,16 @@ class QLBSEnv(gym.Env):
         pass
 
     def mutate_parameters(self):
+        # if np.random.rand(1) < self.mutation:
+        #     self.info.r = np.clip(self.info.r * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-2)
+        # if np.random.rand(1) < self.mutation:
+        #     self.info.mu = np.clip(self.info.mu + 1e-3 * np.random.randn(1)[0] - 1 * self.info.mu, -1e-3, 1e-3)
+        # if np.random.rand(1) < self.mutation:
+        #     self.info.sigma = np.clip(self.info.sigma * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-1)
+        # if np.random.rand(1) < self.mutation:
+        #     self.info.strike_price = np.clip(
+        #         self.info.strike_price + 1e-2 * np.random.randn(1)[0] - 0.1 * (self.info.strike_price - 1), 0.9, 1.1)
         if np.random.rand(1) < self.mutation:
-            self.info.r = np.clip(self.info.r * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-2)
-        if np.random.rand(1) < self.mutation:
-            self.info.mu = np.clip(self.info.mu + 1e-3 * np.random.randn(1)[0] - 1 * self.info.mu, -1e-3, 1e-3)
-        if np.random.rand(1) < self.mutation:
-            self.info.sigma = np.clip(self.info.sigma * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-1)
-        if np.random.rand(1) < self.mutation:
-            self.info.strike_price = np.clip(
-                self.info.strike_price + 1e-2 * np.random.randn(1)[0] - 0.1 * (self.info.strike_price - 1), 0.9, 1.1)
+            self.initial_asset_price = np.clip(
+                self.initial_asset_price + 1e-1 * np.random.randn(1)[0] - 0.1 * (self.initial_asset_price - 1), 0.7,
+                1.3)
