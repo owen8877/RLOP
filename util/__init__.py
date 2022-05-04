@@ -1,7 +1,15 @@
+import pickle
 from pathlib import Path
 
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
+
+import util
+
+
+def _prefix(simplified: bool, plan: str):
+    return ('simplified_' if simplified else '') + plan
 
 
 def standard_to_normalized_price(standard_price: np.ndarray, mu: float, sigma: float, time: np.ndarray, _dt: float):
@@ -58,3 +66,10 @@ class EMACollector:
             ax.fill_between(range(len(emas)), emas + emstd, emas - emstd, alpha=0.5)
         ax.legend(loc='best')
         ax.set(xlabel='iteration', yscale='linear')
+
+
+def abs(arr):
+    if isinstance(arr, np.ndarray):
+        return np.abs(arr)
+    else:
+        return torch.abs(arr)

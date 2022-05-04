@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Callable, Union
 
 import gym
 import numpy as np
@@ -9,13 +9,15 @@ from util.sample import geometricBM
 
 
 class Info:
-    def __init__(self, strike_price: float, r: float, mu: float, sigma: float, risk_lambda: float, _dt: float):
+    def __init__(self, strike_price: float, r: float, mu: float, sigma: float, risk_lambda: float, _dt: float,
+                 friction: float):
         self.strike_price = strike_price
         self.r = r
         self.mu = mu
         self.sigma = sigma
         self.risk_lambda = risk_lambda
         self._dt = _dt
+        self.friction = friction
 
 
 class State:
@@ -35,6 +37,7 @@ class State:
             info.mu,
             info.sigma,
             info.risk_lambda,
+            info.friction,
         ))
 
 
@@ -45,10 +48,11 @@ class Policy:
     def action(self, state: State, info: Info):
         raise NotImplementedError
 
-    def batch_action(self, state_info_tensor):
+    def batch_action(self, state_info_tensor, random: bool = True):
         """
+        :param random:
         :param state_info_tensor: [[normal_price, passed_real_time, remaining_real_time, normal_strike_price, r, mu,
-            sigma, risk_lambda]]
+            sigma, risk_lambda, friction]]
         :return:
         """
         raise NotImplementedError
@@ -70,7 +74,7 @@ class Baseline:
     def batch_estimate(self, state_info_tensor):
         """
         :param state_info_tensor: [[normal_price, passed_real_time, remaining_real_time, normal_strike_price, r, mu,
-            sigma, risk_lambda]]
+            sigma, risk_lambda, friction]]
         :return:
         """
         raise NotImplementedError
@@ -84,11 +88,12 @@ class Baseline:
 
 class QLBSEnv(gym.Env):
     def __init__(self, is_call_option: bool, strike_price: float, max_step: int, mu: float, sigma: float, r: float,
-                 risk_lambda: float, initial_asset_price: float, risk_simulation_paths: int, *, mutation: float = 0.1,
-                 _dt: float = 1):
+                 risk_lambda: float, friction: float, initial_asset_price: float, risk_simulation_paths: int, *,
+                 mutation: Union[float, Callable] = 0.1, _dt: float = 1):
         # Setting of the system; stays constant for a long time
         self.is_call_option = is_call_option
-        self.info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma, risk_lambda=risk_lambda, _dt=_dt)
+        self.info = Info(strike_price=strike_price, r=r, mu=mu, sigma=sigma, risk_lambda=risk_lambda, _dt=_dt,
+                         friction=friction)
         self.gamma = np.exp(-r * _dt)
         self.max_step = max_step
         self.initial_asset_price = initial_asset_price
@@ -125,7 +130,7 @@ class QLBSEnv(gym.Env):
         # Compute hedge position in a batch fashion
         sits = []
         for s in np.arange(t, self.max_step):
-            sit = torch.empty((RS, 8))
+            sit = torch.empty((RS, 9))
             sit[:, 0] = torch.tensor(BM[:, s - t])  # normal_price
             sit[:, 1] = s * self.info._dt  # passed_real_time
             sit[:, 2] = (self.max_step - s) * self.info._dt  # remaining_real_time
@@ -135,16 +140,20 @@ class QLBSEnv(gym.Env):
             sit[:, 5] = self.info.mu  # mu
             sit[:, 6] = self.info.sigma  # sigma
             sit[:, 7] = self.info.risk_lambda  # risk_lambda
+            sit[:, 8] = self.info.friction  # friction
             sits.append(sit)
         hedge_long = pi.batch_action(torch.cat(sits, dim=0))
         hedge = hedge_long.reshape(RS, self.max_step - t, order='F')
         hedge[:, 0] = action
 
-        discounted_S = np.power(self.gamma, t_arr_broad) * GBM
-        discounted_value_change = hedge * (discounted_S[:, 1:] - discounted_S[:, :-1])
+        discount = np.power(self.gamma, t_arr_broad)
+        discounted_S = discount * GBM
+        discounted_cashflow = hedge * (discounted_S[:, 1:] - discounted_S[:, :-1])
+        extended_hedge = np.concatenate((hedge, np.zeros((RS, 1))), axis=1)
+        discounted_tc = self.info.friction * discount[:, 1:] * util.abs(extended_hedge[:, 1:] - extended_hedge[:, :-1]) * GBM[:, 1:]
         end_value = util.payoff_of_option(self.is_call_option, GBM[:, -1], self.info.strike_price)
 
-        # cum_value_change = np.cumsum(discounted_value_change[:, ::-1], axis=1)[:, ::-1]
+        # cum_value_change = np.cumsum(discounted_cashflow[:, ::-1], axis=1)[:, ::-1]
         # discounted_value = np.broadcast_to(end_value[:, None], (RS, self.max_step - t)) * np.power(self.gamma,
         #                                                                                            self.max_step - t) - cum_value_change
         # value = discounted_value / np.power(self.gamma, t_arr_broad[:, :-1])
@@ -152,9 +161,10 @@ class QLBSEnv(gym.Env):
         # estimate = BSInitialEstimator(self.is_call_option)(GBM, self.info.strike_price, t_arr_broad[:, ::-1],
         #                                                    self.info.r, self.info.sigma, self.info._dt)
 
-        total_value_change = np.sum(discounted_value_change, axis=1)
-        t_value = end_value * np.power(self.gamma, self.max_step - t) - total_value_change
-        tp1_value = (t_value + discounted_value_change[:, 0]) / self.gamma
+        total_value_change = np.sum(discounted_cashflow, axis=1)
+        total_tc = np.sum(discounted_tc, axis=1)
+        t_value = end_value * np.power(self.gamma, self.max_step - t) - total_value_change + total_tc
+        tp1_value = (t_value + discounted_cashflow[:, 0]) / self.gamma
 
         base_reward = self.gamma * (1 - (t + 1) / self.max_step) * np.mean(tp1_value) - (
                 1 - t / self.max_step) * np.mean(t_value)
@@ -170,15 +180,19 @@ class QLBSEnv(gym.Env):
         pass
 
     def mutate_parameters(self):
-        # if np.random.rand(1) < self.mutation:
-        #     self.info.r = np.clip(self.info.r * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-2)
-        # if np.random.rand(1) < self.mutation:
-        #     self.info.mu = np.clip(self.info.mu + 1e-3 * np.random.randn(1)[0] - 1 * self.info.mu, -1e-3, 1e-3)
-        # if np.random.rand(1) < self.mutation:
-        #     self.info.sigma = np.clip(self.info.sigma * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-1)
-        # if np.random.rand(1) < self.mutation:
-        #     self.info.strike_price = np.clip(
-        #         self.info.strike_price + 1e-2 * np.random.randn(1)[0] - 0.1 * (self.info.strike_price - 1), 0.9, 1.1)
+        if callable(self.mutation):
+            self.mutation(self)
+            return
+
+        if np.random.rand(1) < self.mutation:
+            self.info.r = np.clip(self.info.r * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-2)
+        if np.random.rand(1) < self.mutation:
+            self.info.mu = np.clip(self.info.mu + 1e-3 * np.random.randn(1)[0] - 1 * self.info.mu, -1e-3, 1e-3)
+        if np.random.rand(1) < self.mutation:
+            self.info.sigma = np.clip(self.info.sigma * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-1)
+        if np.random.rand(1) < self.mutation:
+            self.info.strike_price = np.clip(
+                self.info.strike_price + 1e-2 * np.random.randn(1)[0] - 0.1 * (self.info.strike_price - 1), 0.9, 1.1)
         if np.random.rand(1) < self.mutation:
             self.initial_asset_price = np.clip(
                 self.initial_asset_price + 1e-1 * np.random.randn(1)[0] - 0.1 * (self.initial_asset_price - 1), 0.7,

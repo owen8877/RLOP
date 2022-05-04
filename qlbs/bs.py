@@ -18,7 +18,7 @@ class BSPolicy(Policy):
         return (delta_hedge_bs_euro_vanilla_call if self.is_call else delta_hedge_bs_euro_vanilla_put)(
             S, K, state.remaining_step, info.r, info.sigma, info._dt)
 
-    def batch_action(self, state_info_tensor):
+    def batch_action(self, state_info_tensor, random: bool = True):
         """
         :param state_info_tensor: [[normal_price, passed_real_time, remaining_real_time, normal_strike_price, r, mu,
             sigma, risk_lambda]]
