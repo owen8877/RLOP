@@ -66,10 +66,10 @@
 \shortcut idx
 \color #008000
 \end_index
-\leftmargin 3.5cm
-\topmargin 4cm
-\rightmargin 3.5cm
-\bottommargin 4cm
+\leftmargin 3cm
+\topmargin 3.5cm
+\rightmargin 3cm
+\bottommargin 3.5cm
 \secnumdepth 3
 \tocdepth 3
 \paragraph_separation indent
@@ -133,6 +133,10 @@ In this project, we are going to price options by using reinforcement learning.
  
 \end_layout
 
+\begin_layout Subsection
+Black-Scholes Model
+\end_layout
+
 \begin_layout Standard
 Black-Scholes formula (B-S formula) is the first formula that tells people
  how to price European-style call options.
@@ -158,7 +162,11 @@ literal "false"
  The accumulation of those errors will affect the final price profoundly.
 \end_layout
 
-\begin_layout Section
+\begin_layout Standard
+[How discrete time can add another extra offset to the model]
+\end_layout
+
+\begin_layout Subsection
 Literature Review
 \end_layout
 
@@ -302,12 +310,31 @@ literal "false"
  algorithms.
 \end_layout
 
-\begin_layout Section
-Proposed plan
+\begin_layout Subsection
+Trading Cost 
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Trading-Cost"
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
-Based on the excellent QLBS paper 
+[TBA]
+\end_layout
+
+\begin_layout Section
+QLBS: Q-learning Black-Scholes Model
+\end_layout
+
+\begin_layout Subsection
+A Brief Review
+\end_layout
+
+\begin_layout Standard
+We quickly introduce the QLBS model proposed in 
 \begin_inset CommandInset citation
 LatexCommand cite
 key "halperin2020qlbs"
@@ -315,9 +342,7 @@ literal "false"
 
 \end_inset
 
-, we propose to price options in discrete time and also consider the effects
- of transaction cost and interests rates difference for borrowing and depositing
- money at a bank.
+.
  Consider a sequence of asset prices 
 \begin_inset Formula $\left\{ S_{t}\right\} _{t=0,1,\dots}$
 \end_inset
@@ -399,8 +424,8 @@ s.
 \end_layout
 
 \begin_layout Standard
-A state is defined as a tuple of an integer and two real numbers 
-\begin_inset Formula $\left(t,X_{t},\widehat{B}_{t}\right)$
+A state is defined as a pair of an integer and a real number 
+\begin_inset Formula $\left(t,X_{t}\right)$
 \end_inset
 
 , where 
@@ -411,17 +436,13 @@ X_{t}=-\left(\mu-\frac{\sigma^{2}}{2}\right)t+\log S_{t}
 
 \end_inset
 
-is the compensated logarithm price and 
-\begin_inset Formula $\widehat{B}_{t}$
-\end_inset
-
- is the estimate of the current deposit position.
+is the compensated logarithm price.
  The action space is the real number, indicating how much shares are hedged
  at a particular time.
  A policy is a mapping from the state space to the action space, i.e.
 \begin_inset Formula 
 \[
-\pi:\left(t,X_{t},\widehat{B}_{t}\right)\mapsto a_{t}.
+\pi:\left(t,X_{t}\right)\mapsto a_{t}.
 \]
 
 \end_inset
@@ -443,6 +464,24 @@ Notice that we use
 \end_inset
 
  in normal scale.
+ The policy may depend on other macro factors, e.g.
+ interest rate 
+\begin_inset Formula $r$
+\end_inset
+
+, volatility 
+\begin_inset Formula $\sigma$
+\end_inset
+
+, total maturity time 
+\begin_inset Formula $T$
+\end_inset
+
+, the strike price 
+\begin_inset Formula $K$
+\end_inset
+
+ if the option is of call/put type.
 \end_layout
 
 \begin_layout Standard
@@ -456,9 +495,9 @@ The reward function is derived from the Bellman's optimality equation where
 
 , the value function is defined as
 \begin_inset Formula 
-\[
-V_{t}^{\pi}\left(X_{t}\right)=\bE^{\pi}\left[-\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}e^{-r\left(\tau-t\right)}\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)|\cF_{\tau}\right]|\cF_{t}\right]
-\]
+\begin{equation}
+V_{t}^{\pi}\left(X_{t}\right)=\bE^{\pi}\left[-\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}e^{-r\left(\tau-t\right)}\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)|\cF_{\tau}\right]|\cF_{t}\right]\label{eq:qlbs-value-function}
+\end{equation}
 
 \end_inset
 
@@ -477,18 +516,670 @@ R_{t}\left(X_{t},a_{t},X_{t+1}\right):=\gamma a_{t}\Delta S_{t}-\lambda\text{Var
 \end_inset
 
 where 
-\begin_inset Formula $\gamma=e^{-r\Delta t}$
+\begin_inset Formula $\gamma:=e^{-r\Delta t}$
 \end_inset
 
  is the discounting factor.
- The reward function can be further complicated by the consideration of
- trading cost, usually adding an 
-\begin_inset Formula $-\abs{a_{t}}$
-\end_inset
-
- term.
  The connection between the value function and option pricing is that the
  option price is given by the minus optimal Q-function.
+\end_layout
+
+\begin_layout Subsection
+QLBS as a RL Model
+\end_layout
+
+\begin_layout Standard
+Elegant as the vanilla QLBS approach, it is not a truly RL problem since
+ the optimal policy 
+\begin_inset Formula $\pi^{*}$
+\end_inset
+
+ is solved analytically without any reinforcement learning techniques.
+ In fact, the author derives the Bellman's equation for the optimal Q-function
+ from Eq.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:qlbs-value-function"
+
+\end_inset
+
+
+\begin_inset Formula 
+\begin{equation}
+Q_{t}^{*}\left(X_{t},a_{t}\right)=\gamma\bE_{t}\left[Q_{t+1}\left(X_{t+1},a_{t+1}^{*}\right)+a_{t}\Delta S_{t}\right]-\lambda\gamma^{2}\bE_{t}\left[\widehat{\Pi}_{t+1}^{2}-2a_{t}\widehat{\Pi}_{t+1}\Delta\widehat{S}_{t}+a_{t}^{2}\left(\Delta\widehat{S}_{t}\right)^{2}\right]\label{eq:qlbs-optimal-Q-function}
+\end{equation}
+
+\end_inset
+
+which admits the optimal policy in closed form since Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:qlbs-optimal-Q-function"
+
+\end_inset
+
+ is a quadratic function in 
+\begin_inset Formula $a_{t}$
+\end_inset
+
+.
+ Such direct approach is feasible if provided with abundant data on the
+ correlation structure of the portofolio value 
+\begin_inset Formula $\widehat{\Pi}$
+\end_inset
+
+ and the stock price change 
+\begin_inset Formula $\Delta\widehat{S}$
+\end_inset
+
+, but it fails to generalize beyond this simple setting.
+ Besides, the portofolio value process 
+\begin_inset Formula $\Pi_{t}$
+\end_inset
+
+ is in general non-adapted due to how the self-financing condition (Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:self-financing"
+
+\end_inset
+
+) works.
+ 
+\end_layout
+
+\begin_layout Standard
+To deal with the aforementioned issues, we propose a modified QLBS model
+ which is
+\end_layout
+
+\begin_layout Enumerate
+fully adapted with respect to the given filtration 
+\begin_inset Formula $\left\{ \cF_{t}\right\} $
+\end_inset
+
+,
+\end_layout
+
+\begin_layout Enumerate
+compatible with the transaction cost proposed in Sec.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Trading-Cost"
+
+\end_inset
+
+, and
+\end_layout
+
+\begin_layout Enumerate
+works well with value-based or policy-based learning algorithms.
+\end_layout
+
+\begin_layout Standard
+We start by modifying the value function.
+ The version introduced in Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:qlbs-value-function"
+
+\end_inset
+
+ has the problem that it assigns the (negative) cashflow with a risk part
+ as the reward, but the terminal step gets the option payoff which is in
+ general much larger than the previous steps.
+ Technically speaking, an agent could notice this heterogenity since the
+ time 
+\begin_inset Formula $t$
+\end_inset
+
+ aligns with the terminal time 
+\begin_inset Formula $T$
+\end_inset
+
+, but it is rather difficult in practice to figure out this situation.
+ Thus, we propose the modified value function 
+\begin_inset Marginal
+status open
+
+\begin_layout Plain Layout
+illustration
+\end_layout
+
+\end_inset
+
+
+\begin_inset Formula 
+\[
+V_{t}^{\pi}\left(X_{t}\right)=\bE_{t}^{\pi}\left[-\left(1-\frac{t}{T}\right)\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}\gamma^{\tau-t}\sqrt{\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)\right]}\right].
+\]
+
+\end_inset
+
+Our improvement is two folds:
+\end_layout
+
+\begin_layout Enumerate
+We weight the portfolio term by a diminishing factor 
+\begin_inset Formula $\left(1-\frac{t}{T}\right)$
+\end_inset
+
+.
+ This factor does not impact the starting estimate at 
+\begin_inset Formula $t=0$
+\end_inset
+
+ and it fully vanishes at 
+\begin_inset Formula $t=T$
+\end_inset
+
+.
+ We point out that introducing this factor will break the temporal symmetry
+ so that the intermediate estimate does not correspond to option pricing
+ from the intermediate time steps.
+\end_layout
+
+\begin_layout Enumerate
+We take a square root of the variance terms so that they turn into standard
+ deviation.
+ This helps to keep the value estimate dimensionless and robust.
+\end_layout
+
+\begin_layout Standard
+The reward function changes accordingly to
+\begin_inset Formula 
+\begin{equation}
+R_{t+1}\left(X_{t},a_{t}\right)=\bE_{t}^{\pi}\left[-\left(1-\frac{t}{T}\right)\Pi_{t}\left(X_{t}\right)+\left(1-\frac{t+1}{T}\right)\Pi_{t}\left(X_{t}\right)-\lambda\sqrt{\text{Var}\left[\Pi_{t}\left(X_{t}\right)\right]}\right]\label{eq:qlbs-modified-reward}
+\end{equation}
+
+\end_inset
+
+with action at time 
+\begin_inset Formula $t$
+\end_inset
+
+ to be 
+\begin_inset Formula $a_{t}$
+\end_inset
+
+ and remaining actions following the current policy 
+\begin_inset Formula $\pi$
+\end_inset
+
+.
+ Considering the effect of transaction costs, the portfolio value process
+ 
+\begin_inset Formula $\Pi_{t}$
+\end_inset
+
+ is calculated backwards from the modified self-financing condition
+\begin_inset Formula 
+\begin{equation}
+e^{r\Delta t}\left(\Pi_{t}-u_{t}S_{t}\right)+u_{t}S_{t+1}=\Pi_{t+1}+\text{TC}\left(u_{t+1}-u_{t},S_{t+1}\right)\label{eq:qlbs-modified-self-financing}
+\end{equation}
+
+\end_inset
+
+with terminal condition 
+\begin_inset Formula $\Pi_{T}=h\left(S_{T}\right)$
+\end_inset
+
+ unchanged.
+ We point out that we wrap the cashflow part with an conditional expectation
+ at time 
+\begin_inset Formula $t$
+\end_inset
+
+ so that we don't run into adaptedness issues.
+\end_layout
+
+\begin_layout Subsection
+Experiment Set-up
+\end_layout
+
+\begin_layout Standard
+In this section, we describe how to set-up the QLBS environment and the
+ necessary numerical procedures.
+\end_layout
+
+\begin_layout Subsubsection
+Environment
+\end_layout
+
+\begin_layout Standard
+The environment is responsible for keeping track of the asset price and
+ portfolio value based on the actions provided by the agent.
+ With a given set of parameters 
+\begin_inset Formula $r,\mu,\sigma,T$
+\end_inset
+
+, the asset prices are a set of geometrical brownian motion paths 
+\begin_inset Formula $\left\{ S_{t}\right\} $
+\end_inset
+
+ which solves
+\begin_inset Formula 
+\[
+\d{S_{t}}=\mu S_{t}\d t+\sigma S_{t}\d{W_{t}}
+\]
+
+\end_inset
+
+where 
+\begin_inset Formula $W_{t}$
+\end_inset
+
+ refers to the standard brownian motion according to the filtration 
+\begin_inset Formula $\left\{ \cF_{t}\right\} $
+\end_inset
+
+.
+ At each time step 
+\begin_inset Formula $t$
+\end_inset
+
+, the normalized price 
+\begin_inset Formula $X_{t}=-\left(\mu-\frac{\sigma^{2}}{2}\right)t+\log S_{t}$
+\end_inset
+
+ and 
+\begin_inset Formula $t$
+\end_inset
+
+ are provided to the agent, waiting for the response of the hedge position
+ 
+\begin_inset Formula $a_{t}$
+\end_inset
+
+.
+ Then, the reward 
+\begin_inset Formula $R_{t+1}$
+\end_inset
+
+, as a conditional expectation specified in Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:qlbs-modified-reward"
+
+\end_inset
+
+, is computed empirically by averaging samples from a fixed number of additional
+ trajectories under the current policy.
+ At the beginning of each episode, the parameters are adjusted in a random
+ fashion to help the agent explore different settings and help avoid overfitting.
+\end_layout
+
+\begin_layout Subsubsection
+Agent Parametrization
+\end_layout
+
+\begin_layout Standard
+The agent is fully responsible for determining the hedge position 
+\begin_inset Formula $a_{t}$
+\end_inset
+
+ under a given normalized price at each time step.
+ The policy 
+\begin_inset Formula $\pi$
+\end_inset
+
+, whether stochastic or deterministic, depends on these input variables
+ as well as the environment parameters
+\begin_inset Formula 
+\[
+a_{t}\sim\pi\left(X_{t},t;r,\mu,\sigma,T,K,\lambda\right).
+\]
+
+\end_inset
+
+In pratice, we prefer a stochastic policy since it encourages exploration
+ which is helpful to excape local minima.
+ To further simplify the sampling procedure, we restrict our policy spaces
+ to Gaussian distribution where the agent determines the mean and standard
+ deviation, i.e.
+\begin_inset Formula 
+\[
+\pi=\cN\left(\mu_{\pi},\sigma_{\pi}\right)
+\]
+
+\end_inset
+
+(where the subscripts 
+\begin_inset Formula $\pi$
+\end_inset
+
+ are used to distinguish these parameters from the environmental ones).
+ The statistics 
+\begin_inset Formula $\mu_{\pi}$
+\end_inset
+
+ and 
+\begin_inset Formula $\sigma_{\pi}$
+\end_inset
+
+ are parametrized by two separate neural networks with the Resnet skip-connectio
+n structure.
+ 
+\begin_inset Marginal
+status open
+
+\begin_layout Plain Layout
+Illustration on resnet
+\end_layout
+
+\end_inset
+
+ The Resnet structure is composed of three parts:
+\end_layout
+
+\begin_layout Enumerate
+Pre-processing 
+\begin_inset Formula $T_{\text{lift}}\left(x\right):=\Xi\left(w_{\text{lift}}^{T}x+b_{\text{lift}}\right)$
+\end_inset
+
+, that lifts the (8-dimensional) input to the latent dimension by an affine
+ transform and ac activation funciton 
+\begin_inset Formula $\Xi$
+\end_inset
+
+;
+\end_layout
+
+\begin_layout Enumerate
+Chain of transforms 
+\begin_inset Formula $\left\{ T^{\left(k\right)}\right\} $
+\end_inset
+
+ in a fixed-point iteration style, with each transform combining the identity
+ functions and a series of alternating affine transforms 
+\begin_inset Formula $\left\{ Z_{l}^{\left(k\right)}\right\} $
+\end_inset
+
+ and activation 
+\begin_inset Formula $\Xi$
+\end_inset
+
+, i.e.
+\begin_inset Formula 
+\[
+T^{\left(k\right)}:=\Xi\circ\left[\text{id}+Z_{n_{k}}^{\left(k\right)}\circ\Xi\circ Z_{n_{k}-1}^{\left(k\right)}\circ\cdots\circ\Xi\circ Z_{1}^{\left(k\right)}\right]
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Enumerate
+Post-processing 
+\begin_inset Formula $T_{\text{project}}\left(x\right):=w_{\text{project}}^{T}x+b_{\text{project}}$
+\end_inset
+
+, that projects the latent representations onto the target space.
+\end_layout
+
+\begin_layout Standard
+Thus, the Resnet realization can be formally written as 
+\begin_inset Formula $T_{\text{project}}\circ T^{\left(k\right)}\circ T^{\left(k-1\right)}\circ\cdots\circ T^{\left(1\right)}\circ T_{\text{lift}}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsubsection
+Learning Algorithm
+\end_layout
+
+\begin_layout Standard
+Since the action space 
+\begin_inset Formula $a_{t}\in\bR$
+\end_inset
+
+ is a continuous space, it is nature to adopt a policy-based method.
+ Here we opt-in the classical Critic-Actor model where the policy components
+ relies on the value estimator to learn quickly and reliably while the value
+ estimator learns from empirical averages of Monte Carlo samples.
+ The value estimator, parameterized by a neural network, uses the same Resnet
+ structure as mentioned in the previous section.
+ We refer to the REINFORCE algorithm 
+\begin_inset Marginal
+status open
+
+\begin_layout Plain Layout
+ref?
+\end_layout
+
+\end_inset
+
+ for details.
+\end_layout
+
+\begin_layout Standard
+In our implementation, the policy network and the value network have the
+ same latent dimension 10 and they are composed of two Resnet blocks with
+ two hidden affine transforms.
+ We use the Adam optimizers to update the networks, one for each, with learning
+ rate set to 
+\begin_inset Formula $0.001$
+\end_inset
+
+
+\begin_inset Foot
+status open
+
+\begin_layout Plain Layout
+check before submitting
+\end_layout
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Section
+RLOP: Replication Learning of Option Pricing
+\end_layout
+
+\begin_layout Standard
+In this section, we propose a novel algorithm that prices a call/put option
+ via portfolio replication, but this method uses a forward view which is
+ fundamentally different from the QLBS approach.
+ The idea is simple: the agent manages a portfolio which yields a reward
+ at the terminal time based on how accurate the portfolio value is compared
+ to the option payoff.
+ This naive idea has the problem that the reward is zero for quite a long
+ time until the maturity, which is usually not good for shaping the agent's
+ behavior.
+ To deal with this downside, we propose to group a few options as an ensemble
+ so that the agent gets a stream of feedbacks during each episode.
+ To be specific, given a (simulated or historical) path of the asset price
+ 
+\begin_inset Formula $\left\{ S_{t}\right\} $
+\end_inset
+
+, maturity time 
+\begin_inset Formula $T$
+\end_inset
+
+, and the payoff function 
+\begin_inset Formula $h$
+\end_inset
+
+, the agent needs to manages (at most) 
+\begin_inset Formula $T$
+\end_inset
+
+ portfolios 
+\begin_inset Formula $\left\{ \Pi_{t}^{\left(i\right)}\right\} _{i=1}^{T}$
+\end_inset
+
+ at the same time, where the 
+\begin_inset Formula $k$
+\end_inset
+
+-th portfolio replicates the option that terminals at time step 
+\begin_inset Formula $k$
+\end_inset
+
+.
+ In other words, for every 
+\begin_inset Formula $i\in\left[t+1,T\right]$
+\end_inset
+
+, the agent proposes the hedge position 
+\begin_inset Formula $u_{t}^{\left(i\right)}$
+\end_inset
+
+ based on the current time step 
+\begin_inset Formula $t$
+\end_inset
+
+, the asset price 
+\begin_inset Formula $S_{t}$
+\end_inset
+
+, and the balance of the 
+\begin_inset Formula $i$
+\end_inset
+
+-th portfolio 
+\begin_inset Formula $\Pi_{t}^{\left(i\right)}$
+\end_inset
+
+.
+ We hold the belief that the agent is able to learn the hedging strategy
+ step by step from small 
+\begin_inset Formula $t$
+\end_inset
+
+ to the terminal time 
+\begin_inset Formula $T$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Subsection
+MDP Formulation
+\end_layout
+
+\begin_layout Standard
+We now rigorously define the aforementioned problem as a MDP.
+ Given a maturity time 
+\begin_inset Formula $i$
+\end_inset
+
+, the state space consists of tuples containing the time step 
+\begin_inset Formula $t$
+\end_inset
+
+, the asset price 
+\begin_inset Formula $S_{t}$
+\end_inset
+
+, and the current portfolio value 
+\begin_inset Formula $\Pi_{t}^{\left(i\right)}$
+\end_inset
+
+.
+ The action space is 
+\begin_inset Formula $\bR$
+\end_inset
+
+ that contains all possible hedging positions.
+ The transitional probability (density) function is defined as
+\begin_inset Formula 
+\[
+p\left(\left(t,S_{t},\Pi_{t}^{\left(i\right)}\right),u_{t}^{\left(i\right)}\to\left(t',S_{t'},\Pi_{t'}^{\left(i\right)}\right),R_{t+1}\right)=\begin{cases}
+\delta_{t+1,t'}\delta_{\widetilde{\Pi}_{t+1}^{\left(i\right)},\Pi_{t'}^{\left(i\right)}}\rho\left(S_{t},S_{t'}\right) & t<i\\
+0 & t=i
+\end{cases}
+\]
+
+\end_inset
+
+where 
+\end_layout
+
+\begin_layout Itemize
+the only admissible state is the terminal state when 
+\begin_inset Formula $t>i$
+\end_inset
+
+, marking the end of this episode;
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $\widetilde{\Pi}_{t+1}^{\left(i\right)}$
+\end_inset
+
+ refers to the portfolio value determined by the self-financing condition
+\begin_inset Formula 
+\[
+\widetilde{\Pi}_{t+1}^{\left(i\right)}=e^{r\Delta t}\left(\Pi_{t}-u_{t}^{\left(i\right)}S_{t}\right)+u_{t}^{\left(i\right)}S_{t+1}-\text{TC}\left(u_{t+1}^{\left(i\right)}-u_{t}^{\left(i\right)},S_{t+1}\right)
+\]
+
+\end_inset
+
+(which is the same as Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:qlbs-modified-self-financing"
+
+\end_inset
+
+);
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $\rho$
+\end_inset
+
+ characterizes the dynamics of the underlying asset, e.g.
+ the discrete version geometric brownian motion;
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $R_{t+1}=0$
+\end_inset
+
+ for 
+\begin_inset Formula $t+1<i$
+\end_inset
+
+ and 
+\begin_inset Formula $R_{i}=H\left(h\left(S_{i}\right),\Pi_{i}^{\left(i\right)}\right)$
+\end_inset
+
+ where 
+\begin_inset Formula $H$
+\end_inset
+
+ is a given penalty function that measures how accurate the portfolio value
+ 
+\begin_inset Formula $\Pi_{i}^{\left(i\right)}$
+\end_inset
+
+ mimics the option payoff 
+\begin_inset Formula $h\left(S_{i}\right)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+As we mentioned in the previous paragraph, we stack a few
+\end_layout
+
+\begin_layout Section
+Conclusion and Discussion
 \end_layout
 
 \begin_layout Standard

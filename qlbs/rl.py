@@ -4,24 +4,23 @@ from unittest import TestCase
 
 import numpy as np
 import torch
-import tqdm
 from gym import Env
 from matplotlib import pyplot as plt
 from torch.optim.adam import Adam
 from tqdm import trange
 
 import util
-from qlbs.bs import BSPolicy, BSInitialEstimator, BSBaseline
+from qlbs.bs import BSPolicy, BSBaseline
 from qlbs.env import State, Info, QLBSEnv, Policy, Baseline
-from util.net import ResNet
+from util.net import StrictResNet
 from util.sample import geometricBM
 
 
 class GaussianPolicy(Policy):
     def __init__(self, alpha):
         super().__init__()
-        self.theta_mu = ResNet(8, 10, groups=2, layer_per_group=2)
-        self.theta_sigma = ResNet(8, 10, groups=2, layer_per_group=2)
+        self.theta_mu = StrictResNet(8, 10, groups=2, layer_per_group=2)
+        self.theta_sigma = StrictResNet(8, 10, groups=2, layer_per_group=2)
 
         self.optimizer = Adam(chain(self.theta_mu.parameters(), self.theta_sigma.parameters()), lr=alpha)
 
@@ -38,23 +37,23 @@ class GaussianPolicy(Policy):
         return mu_c, sigma_c
 
     def action(self, state, info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
         with torch.no_grad():
             mu, sigma = self._gauss_param(tensor)
             return float(np.random.randn(1)) * float(sigma) + float(mu)
 
     def update(self, delta, action, state, info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
 
-        def loss(delta, a, tensor):
+        def loss_func():
             mu, sigma = self._gauss_param(tensor)
-            log_pi = - (a - mu) ** 2 / (2 * sigma ** 2) - torch.log(sigma)
+            log_pi = - (action - mu) ** 2 / (2 * sigma ** 2) - torch.log(sigma)
             loss = - delta * log_pi
             loss.backward()
             return loss
 
         self.optimizer.zero_grad()
-        self.optimizer.step(lambda: loss(delta, action, tensor))
+        self.optimizer.step(loss_func)
 
     def batch_action(self, state_info_tensor):
         """
@@ -99,24 +98,24 @@ class GaussianPolicy(Policy):
 class NNBaseline(Baseline):
     def __init__(self, alpha=1e-2):
         super().__init__()
-        self.net = ResNet(8, 10, groups=2, layer_per_group=2)
+        self.net = StrictResNet(8, 10, groups=2, layer_per_group=2)
         self.optimizer = Adam(self.net.parameters(), lr=alpha)
 
     def __call__(self, state: State, info: Info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
         with torch.no_grad():
             return float(self.net(tensor.float()))
 
     def update(self, G: float, state: State, info: Info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
 
-        def loss(G, tensor):
+        def loss_func():
             loss = (G - self.net(tensor.float())) ** 2
             loss.backward()
             return loss
 
         self.optimizer.zero_grad()
-        self.optimizer.step(lambda: loss(G, tensor))
+        self.optimizer.step(loss_func)
 
     def batch_estimate(self, state_info_tensor):
         with torch.no_grad():
@@ -151,13 +150,13 @@ class NNBaseline(Baseline):
 class SimplifiedGaussianPolicy(Policy):
     def __init__(self, alpha):
         super().__init__()
-        self.theta_mu = ResNet(8, 10, groups=2, layer_per_group=2)
-        self.theta_sigma = ResNet(8, 10, groups=2, layer_per_group=2)
+        self.theta_mu = StrictResNet(3, 10, groups=2, layer_per_group=2)
+        self.theta_sigma = StrictResNet(3, 10, groups=2, layer_per_group=2)
 
         self.optimizer = Adam(chain(self.theta_mu.parameters(), self.theta_sigma.parameters()), lr=alpha)
 
     def _gauss_param(self, tensor):
-        tensor = tensor.float()
+        tensor = tensor[:, [0, 2, 3]].float()
         mu = self.theta_mu(tensor)
         sigma = self.theta_sigma(tensor)
 
@@ -169,23 +168,23 @@ class SimplifiedGaussianPolicy(Policy):
         return mu_c, sigma_c
 
     def action(self, state, info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
         with torch.no_grad():
             mu, sigma = self._gauss_param(tensor)
             return float(np.random.randn(1)) * float(sigma) + float(mu)
 
     def update(self, delta, action, state, info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
 
-        def loss(delta, a, tensor):
+        def loss_func():
             mu, sigma = self._gauss_param(tensor)
-            log_pi = - (a - mu) ** 2 / (2 * sigma ** 2) - torch.log(sigma)
+            log_pi = - (action - mu) ** 2 / (2 * sigma ** 2) - torch.log(sigma)
             loss = - delta * log_pi
             loss.backward()
             return loss
 
         self.optimizer.zero_grad()
-        self.optimizer.step(lambda: loss(delta, action, tensor))
+        self.optimizer.step(loss_func)
 
     def batch_action(self, state_info_tensor):
         """
@@ -230,28 +229,31 @@ class SimplifiedGaussianPolicy(Policy):
 class SimplifiedNNBaseline(Baseline):
     def __init__(self, alpha=1e-2):
         super().__init__()
-        self.net = ResNet(8, 10, groups=2, layer_per_group=2)
+        self.net = StrictResNet(3, 10, groups=2, layer_per_group=2)
         self.optimizer = Adam(self.net.parameters(), lr=alpha)
 
     def __call__(self, state: State, info: Info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
         with torch.no_grad():
-            return float(self.net(tensor.float()))
+            return float(self._predict(tensor))
+
+    def _predict(self, tensor):
+        return self.net(tensor[:, [0, 2, 3]].float())
 
     def update(self, G: float, state: State, info: Info):
-        tensor = state.to_tensor(info)
+        tensor = state.to_tensor(info)[None, :]
 
-        def loss(G, tensor):
-            loss = (G - self.net(tensor.float())) ** 2
+        def loss_func():
+            loss = (G - self._predict(tensor)) ** 2
             loss.backward()
             return loss
 
         self.optimizer.zero_grad()
-        self.optimizer.step(lambda: loss(G, tensor))
+        self.optimizer.step(loss_func)
 
     def batch_estimate(self, state_info_tensor):
         with torch.no_grad():
-            return self.net(state_info_tensor.float()).numpy()
+            return self._predict(state_info_tensor).numpy()
 
     def save(self, filename: str):
         util.ensure_dir(filename, need_strip_end=True)
@@ -269,7 +271,7 @@ class SimplifiedNNBaseline(Baseline):
         pbar = trange(int(itr_max))
         for _ in pbar:
             def loss_func():
-                prediction = self.net(source.float())[:, 0]
+                prediction = self._predict(source)[:, 0]
                 loss = torch.mean((prediction - target) ** 2)
                 loss.backward()
                 return loss
@@ -277,6 +279,7 @@ class SimplifiedNNBaseline(Baseline):
             optimizer.zero_grad()
             loss = optimizer.step(loss_func)
             pbar.set_description(desc=f'loss={loss:.5e}')
+
 
 def policy_gradient(env: Env, pi: Policy, V: Baseline, episode_n: int, *, ax: plt.Axes = None,
                     axs_env: Tuple[plt.Axes] = None, V_frozen: bool = False, pi_frozen: bool = False):
@@ -488,29 +491,30 @@ class Test(TestCase):
         r = 1e-2
         mu = 0e-3
         sigma = 1e-1
-        risk_lambda = 1
+        risk_lambda = 3
         initial_price = 1
         strike_price = 1
         T = 3
         _dt = 1
+        simplified = False
 
         max_time = int(np.round(T / _dt))
         env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=max_time, mu=mu, sigma=sigma,
                       r=r, risk_lambda=risk_lambda, initial_asset_price=initial_price, risk_simulation_paths=50,
                       _dt=_dt, mutation=1e-1)
-        gaussian_pi = GaussianPolicy(alpha=1e-4)
-        nnbaseline = NNBaseline(alpha=1e-4)
+        gaussian_pi = (SimplifiedGaussianPolicy if simplified else GaussianPolicy)(alpha=1e-4)
+        nnbaseline = (SimplifiedNNBaseline if simplified else NNBaseline)(alpha=1e-4)
         bs_pi = BSPolicy(is_call=is_call_option)
         bs_baseline = BSBaseline(is_call=is_call_option)
 
-        load_plan = 'train_to_bs_test'
+        # load_plan = 'simplified_train_to_bs_test' if simplified else 'train_to_bs_test'
         # load_plan = 'T5_test'
-        nnbaseline.load(f'../dataset/trained_model/qlbs/{load_plan}/baseline.pt')
-        gaussian_pi.load(f'../dataset/trained_model/qlbs/{load_plan}/policy.pt')
-        # policy_gradient(env, gaussian_pi, nnbaseline, episode_n=2000, pi_frozen=False)
-        policy_gradient(env, bs_pi, nnbaseline, episode_n=2000, pi_frozen=True)
-        save_plan = 'rl_after_pretrain'
-        # save_plan = 'T5_test'
+        # nnbaseline.load(f'../dataset/trained_model/qlbs/{load_plan}/baseline.pt')
+        # gaussian_pi.load(f'../dataset/trained_model/qlbs/{load_plan}/policy.pt')
+        policy_gradient(env, gaussian_pi, nnbaseline, episode_n=2000, pi_frozen=False)
+        # policy_gradient(env, gaussian_pi, bs_baseline, episode_n=2000, V_frozen=True)
+        # save_plan = 'simplified_rl_after_pretrain' if simplified else 'rl_after_pretrain'
+        save_plan = 'simplified_T3_test' if simplified else 'T3_test'
         gaussian_pi.save(f'../dataset/trained_model/qlbs/{save_plan}/policy.pt')
         nnbaseline.save(f'../dataset/trained_model/qlbs/{save_plan}/baseline.pt')
         plt.show()
@@ -524,28 +528,25 @@ class Test(TestCase):
         is_call_option = True
         r = 1e-2
         mu = 0e-3
-        sigma = 1e-2
+        sigma = 1e-1
         risk_lambda = 3
-        initial_price = 1
         strike_price = 1
         max_step = 3
         _dt = 1
+        simplified = False
 
-        # plan = 'T5_test'
+        plan = 'T3_test'
         # plan = 'train_to_bs_test'
-        plan = 'rl_after_pretrain'
-        gaussian_pi = GaussianPolicy(alpha=1e-3)
-        gaussian_pi.load(f'../dataset/trained_model/qlbs/{plan}/policy.pt')
-        nnbaseline = NNBaseline(alpha=1e-3)
-        nnbaseline.load(f'../dataset/trained_model/qlbs/{plan}/baseline.pt')
+        # plan = 'rl_after_pretrain'
+
+        full_plan = "simplified" if simplified else "" + plan
+
+        gaussian_pi = (SimplifiedGaussianPolicy if 'simplified' in plan else GaussianPolicy)(alpha=1e-3)
+        gaussian_pi.load(f'../dataset/trained_model/qlbs/{full_plan}/policy.pt')
+        nnbaseline = (SimplifiedNNBaseline if 'simplified' in plan else NNBaseline)(alpha=1e-3)
+        nnbaseline.load(f'../dataset/trained_model/qlbs/{full_plan}/baseline.pt')
         bs_pi = BSPolicy(is_call=is_call_option)
         bs_baseline = BSBaseline(is_call=is_call_option)
-
-        # max_time = int(np.round(max_step / _dt))
-        # env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=max_time, mu=mu, sigma=sigma,
-        #               r=r, risk_lambda=risk_lambda, initial_asset_price=initial_price, risk_simulation_paths=50,
-        #               _dt=_dt, mutation=0)
-        # policy_gradient(env, bs_pi, None, episode_n=10000)
 
         T_grid, S_grid = np.meshgrid(np.arange(max_step + 1),
                                      np.linspace(strike_price * 0.8, strike_price * 1.2, 91))
@@ -562,13 +563,11 @@ class Test(TestCase):
             price = torch.tensor(price)
             state_info_tensor = torch.empty((len(time), 8))
             state_info_tensor[:, 0] = torch.tensor(
-                util.standard_to_normalized_price(price.numpy(), mu, sigma, max_step - time.numpy(),
-                                                  _dt))  # normal_price
+                util.standard_to_normalized_price(price.numpy(), mu, sigma, time.numpy(), _dt))  # normal_price
             state_info_tensor[:, 1] = time * _dt  # passed_real_time
             state_info_tensor[:, 2] = (max_step - time) * _dt  # remaining_real_time
             state_info_tensor[:, 3] = torch.tensor(
-                util.standard_to_normalized_price(strike_price, mu, sigma, max_step - time.numpy(),
-                                                  _dt))  # normal_strike_price
+                util.standard_to_normalized_price(strike_price, mu, sigma, max_step, _dt))  # normal_strike_price
             state_info_tensor[:, 4] = r  # r
             state_info_tensor[:, 5] = mu  # mu
             state_info_tensor[:, 6] = sigma  # sigma
@@ -610,10 +609,10 @@ class Test(TestCase):
         plt.plot(S_slice, -nnbaseline.batch_estimate(price_slice), label='NN')
         plt.legend(loc='best')
 
-        fig = plt.figure()
-        ax = fig.add_subplot(projection='3d')
-        __array = np.load('tmp.npy')
-        ax.scatter(__array[:, 0], __array[:, 1], -__array[:, 2])
+        # fig = plt.figure()
+        # ax = fig.add_subplot(projection='3d')
+        # __array = np.load('tmp.npy')
+        # ax.scatter(__array[:, 0], __array[:, 1], -__array[:, 2])
 
         plt.show()
 
@@ -626,9 +625,11 @@ class Test(TestCase):
         is_call_option = True
         max_step = 4
         _dt = 1
+        simplified = True
+        r, mu, sigma, risk_lambda = 1e-2, 0, 1e-1, 0
 
-        gaussian_pi = GaussianPolicy(alpha=1e-3)
-        nnbaseline = NNBaseline(alpha=1e-3)
+        gaussian_pi = (SimplifiedGaussianPolicy if simplified else GaussianPolicy)(alpha=1e-3)
+        nnbaseline = (SimplifiedNNBaseline if simplified else NNBaseline)(alpha=1e-3)
         bs_pi = BSPolicy(is_call=is_call_option)
         bs_baseline = BSBaseline(is_call=is_call_option)
 
@@ -645,25 +646,48 @@ class Test(TestCase):
             state_info_tensor[:, 6] = sigma  # sigma
             state_info_tensor[:, 7] = np.abs(np.random.randn(RS))  # risk_lambda
 
-            state_info_tensor[:, 0] = util.standard_to_normalized_price(price, mu, sigma, max_step - time,
-                                                                        _dt)  # normal_price
+            state_info_tensor[:, 0] = util.standard_to_normalized_price(price, mu, sigma, time, _dt)  # normal_price
             state_info_tensor[:, 1] = time * _dt  # passed_real_time
             state_info_tensor[:, 2] = (max_step - time) * _dt  # remaining_real_time
-            state_info_tensor[:, 3] = util.standard_to_normalized_price(strike_price, mu, sigma, max_step - time,
+            state_info_tensor[:, 3] = util.standard_to_normalized_price(strike_price, mu, sigma, max_step,
+                                                                        _dt)  # normal_strike_price
+
+            return torch.tensor(state_info_tensor)
+
+        def build_simplified_random(RS, include_terminal: bool, r, mu, sigma, risk_lambda):
+            time = np.random.randint(low=0, high=max_step + 1 if include_terminal else max_step, size=RS)
+            price = np.exp(np.random.randn(RS) * 0.25)
+            strike_price = np.exp(np.random.randn(RS) * 0.25)
+            state_info_tensor = np.empty((RS, 8))
+
+            state_info_tensor[:, 4] = r
+            state_info_tensor[:, 5] = mu
+            state_info_tensor[:, 6] = sigma
+            state_info_tensor[:, 7] = risk_lambda
+
+            state_info_tensor[:, 0] = util.standard_to_normalized_price(price, mu, sigma, time, _dt)  # normal_price
+            state_info_tensor[:, 1] = time * _dt  # passed_real_time
+            state_info_tensor[:, 2] = (max_step - time) * _dt  # remaining_real_time
+            state_info_tensor[:, 3] = util.standard_to_normalized_price(strike_price, mu, sigma, max_step,
                                                                         _dt)  # normal_strike_price
 
             return torch.tensor(state_info_tensor)
 
         RS = 10000
-        source_price = build_random(RS, include_terminal=True)
-        source_hedge = build_random(RS, include_terminal=False)
+        if simplified:
+            source_price = build_simplified_random(RS, True, r, mu, sigma, risk_lambda)
+            source_hedge = build_simplified_random(RS, False, r, mu, sigma, risk_lambda)
+        else:
+            source_price = build_random(RS, include_terminal=True)
+            source_hedge = build_random(RS, include_terminal=False)
         target_price = torch.tensor(-bs_baseline.batch_estimate(source_price.numpy()))
         target_hedge = torch.tensor(bs_pi.batch_action(source_hedge))
 
-        gaussian_pi.load('../dataset/trained_model/qlbs/train_to_bs_test/policy.pt')
-        gaussian_pi.train_based_on(source_hedge, target_hedge, lr=1e-3, itr_max=2e3)
-        gaussian_pi.save('../dataset/trained_model/qlbs/train_to_bs_test/policy.pt')
+        label = 'simplified_train_to_bs_test' if simplified else 'train_to_bs_test'
+        # gaussian_pi.load(f'../dataset/trained_model/qlbs/{label}/policy.pt')
+        # gaussian_pi.train_based_on(source_hedge, target_hedge, lr=1e-3, itr_max=2e3)
+        # gaussian_pi.save(f'../dataset/trained_model/qlbs/{label}/policy.pt')
 
-        nnbaseline.load('../dataset/trained_model/qlbs/train_to_bs_test/baseline.pt')
-        nnbaseline.train_based_on(source_price, target_price, lr=1e-3, itr_max=2e3)
-        nnbaseline.save('../dataset/trained_model/qlbs/train_to_bs_test/baseline.pt')
+        nnbaseline.load(f'../dataset/trained_model/qlbs/{label}/baseline.pt')
+        nnbaseline.train_based_on(source_price, target_price, lr=2e-4, itr_max=2e3)
+        nnbaseline.save(f'../dataset/trained_model/qlbs/{label}/baseline.pt')
