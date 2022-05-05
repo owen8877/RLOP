@@ -4,6 +4,8 @@ from unittest import TestCase
 import matplotlib as mpl
 import numpy as np
 import seaborn as sns
+from matplotlib import pyplot as plt
+from pandas import DataFrame, Series
 
 import util
 from qlbs.bs import BSPolicy, BSBaseline
@@ -42,8 +44,8 @@ class Experiment1(TestCase):
         r, mu, sigma, risk_lambdas, initial_price, strike_price, T, _dt, friction, is_call_option, simplified, \
         max_step, mutation_lambdas = self._parameters()
 
-        for mutation_lambda in mutation_lambdas:
-            for risk_lambda in risk_lambdas:
+        for mutation_lambda in [0]: #mutation_lambdas:
+            for risk_lambda in [2]: #risk_lambdas:
                 mutate_status = []
 
                 def mutate(env: QLBSEnv):
@@ -60,7 +62,7 @@ class Experiment1(TestCase):
                 nn_policy = GaussianPolicy(simplified=simplified, alpha=1e-4)
                 nn_baseline = NNBaseline(simplified=simplified, alpha=1e-4)
 
-                collector = policy_gradient(env, nn_policy, nn_baseline, episode_n=400)
+                collector = policy_gradient(env, nn_policy, nn_baseline, episode_n=4000)
                 path = self._path(simplified, risk_lambda, mutation_lambda)
                 nn_policy.save(f'{path}/policy.pt')
                 nn_baseline.save(f'{path}/baseline.pt')
@@ -71,15 +73,48 @@ class Experiment1(TestCase):
         r, mu, sigma, risk_lambdas, initial_price, strike_price, T, _dt, friction, is_call_option, simplified, \
         max_step, mutation_lambdas = self._parameters()
 
+        mutated_summary = dict()
+        fixed_summary = dict()
+
         for mutation_lambda in mutation_lambdas:
+            summary = fixed_summary if np.isclose(mutation_lambda, 0) else mutated_summary
             for risk_lambda in risk_lambdas:
                 path = self._path(simplified, risk_lambda, mutation_lambda)
 
                 with open(f'{path}/additional.pickle', 'rb') as f:
                     additional = pickle.load(f)
-                    collector = additional['collector']
+                    collector: util.EMACollector = additional['collector']
                     mutate_status = additional['mutate_status']
-                nn_policy = GaussianPolicy(simplified=simplified, alpha=1e-4, from_filename=f'{path}/policy.pt')
-                nn_baseline = NNBaseline(simplified=simplified, alpha=1e-4, from_filename=f'{path}/baseline.pt')
-                bs_pi = BSPolicy(is_call=is_call_option)
-                bs_baseline = BSBaseline(is_call=is_call_option)
+
+                t_return_ma = Series(collector.ema_dict['t_return'])
+                t_return_sq = Series(collector.emsq_dict['t_return'])
+                t_return_std = np.sqrt(t_return_sq - t_return_ma ** 2)
+
+                t_base_return_ma = Series(collector.ema_dict['t_base_return'])
+                t_base_return_sq = Series(collector.emsq_dict['t_base_return'])
+                t_base_return_std = np.sqrt(t_base_return_sq - t_base_return_ma ** 2)
+
+                summary[risk_lambda] = DataFrame({
+                    't_return_ma': t_return_ma,
+                    't_return_std': t_return_std,
+                    't_base_return_ma': t_base_return_ma,
+                    't_base_return_std': t_base_return_std,
+                    'mutation': (m for (t, m) in mutate_status),
+                })
+
+        # Start to plot the fixed part
+        fig1 = plt.figure(figsize=(7, 5))
+        for risk_lambda in risk_lambdas:
+            df: DataFrame = fixed_summary[risk_lambda]
+            plt.plot(df.index, df['t_return_ma'], label=rf'return ($\lambda$={risk_lambda:d})')
+            plt.fill_between(df.index, df['t_return_ma'] - df['t_return_std'] * 2,
+                             df['t_return_ma'] + df['t_return_std'] * 2, alpha=0.1)
+        for risk_lambda in risk_lambdas:
+            if np.isclose(risk_lambda, 0):
+                continue
+            df: DataFrame = fixed_summary[risk_lambda]
+            plt.plot(df.index, df['t_base_return_ma'], label=rf'cashflow ($\lambda$={risk_lambda:d})')
+            plt.fill_between(df.index, df['t_base_return_ma'] - df['t_base_return_std'] * 2,
+                             df['t_base_return_ma'] + df['t_base_return_std'] * 2, alpha=0.1)
+        plt.legend(loc='best')
+        plt.show()
