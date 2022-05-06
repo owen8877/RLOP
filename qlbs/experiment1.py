@@ -31,7 +31,7 @@ class Experiment1(TestCase):
         is_call_option = True
         simplified = True
         max_step = int(np.round(T / _dt))
-        mutation_lambdas = [0, 5e-3]
+        mutation_lambdas = [0, 5e-2]
 
         return r, mu, sigma, risk_lambdas, initial_price, strike_price, T, _dt, friction, is_call_option, simplified, \
                max_step, mutation_lambdas
@@ -40,12 +40,13 @@ class Experiment1(TestCase):
         plan = f'risk_lambda={risk_lambda:d}, mutation_lambda={mutation_lambda:.2e}'
         return f'trained_model/{exp_name}/{util._prefix(simplified, plan)}'
 
-    def test_no_mutation(self):
+    def test_mutation_or_not(self):
         r, mu, sigma, risk_lambdas, initial_price, strike_price, T, _dt, friction, is_call_option, simplified, \
         max_step, mutation_lambdas = self._parameters()
+        reuse_training = False
 
-        for mutation_lambda in [0]: #mutation_lambdas:
-            for risk_lambda in [2]: #risk_lambdas:
+        for mutation_lambda in mutation_lambdas:
+            for risk_lambda in risk_lambdas:
                 mutate_status = []
 
                 def mutate(env: QLBSEnv):
@@ -56,14 +57,17 @@ class Experiment1(TestCase):
                         mutated = False
                     mutate_status.append((len(mutate_status), mutated))
 
+                path = self._path(simplified, risk_lambda, mutation_lambda)
                 env = QLBSEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=max_step, mu=mu,
                               sigma=sigma, r=r, risk_lambda=risk_lambda, friction=friction,
                               initial_asset_price=initial_price, risk_simulation_paths=200, _dt=_dt, mutation=mutate)
-                nn_policy = GaussianPolicy(simplified=simplified, alpha=1e-4)
-                nn_baseline = NNBaseline(simplified=simplified, alpha=1e-4)
+                nn_policy = GaussianPolicy(simplified=simplified, alpha=1e-4,
+                                           from_filename=f'{path}/policy.pt' if reuse_training else None)
+                nn_baseline = NNBaseline(simplified=simplified, alpha=1e-4,
+                                         from_filename=f'{path}/baseline.pt' if reuse_training else None)
 
-                collector = policy_gradient(env, nn_policy, nn_baseline, episode_n=4000)
-                path = self._path(simplified, risk_lambda, mutation_lambda)
+                collector = policy_gradient(env, nn_policy, nn_baseline,
+                                            episode_n=4000 if np.isclose(mutation_lambda) else 12000)
                 nn_policy.save(f'{path}/policy.pt')
                 nn_baseline.save(f'{path}/baseline.pt')
                 with open(f'{path}/additional.pickle', 'wb') as f:
@@ -103,18 +107,40 @@ class Experiment1(TestCase):
                 })
 
         # Start to plot the fixed part
-        fig1 = plt.figure(figsize=(7, 5))
-        for risk_lambda in risk_lambdas:
+        fig1 = plt.figure(figsize=(7, 4))
+        palette = sns.color_palette()
+        deep_palette = sns.color_palette('deep')
+        for i, risk_lambda in enumerate(risk_lambdas):
             df: DataFrame = fixed_summary[risk_lambda]
-            plt.plot(df.index, df['t_return_ma'], label=rf'return ($\lambda$={risk_lambda:d})')
+            plt.plot(df.index, df['t_return_ma'], label=rf'return ($\lambda$={risk_lambda:d})', c=palette[i])
             plt.fill_between(df.index, df['t_return_ma'] - df['t_return_std'] * 2,
                              df['t_return_ma'] + df['t_return_std'] * 2, alpha=0.1)
-        for risk_lambda in risk_lambdas:
+        for i, risk_lambda in enumerate(risk_lambdas):
             if np.isclose(risk_lambda, 0):
                 continue
             df: DataFrame = fixed_summary[risk_lambda]
-            plt.plot(df.index, df['t_base_return_ma'], label=rf'cashflow ($\lambda$={risk_lambda:d})')
+            plt.plot(df.index, df['t_base_return_ma'], label=rf'cashflow ($\lambda$={risk_lambda:d})',
+                     c=deep_palette[i], ls='-.')
             plt.fill_between(df.index, df['t_base_return_ma'] - df['t_base_return_std'] * 2,
                              df['t_base_return_ma'] + df['t_base_return_std'] * 2, alpha=0.1)
         plt.legend(loc='best')
+        plt.gca().set(xlabel='iteration', ylabel='return (negative option price)')
+        fig1.savefig(f'plot/{exp_name}/learning-curve.png')
+
+        # Plot how the agent learns under mutation
+        fig2 = plt.figure(figsize=(7, 4))
+        risk_lambda_to_plot = 2
+        df: DataFrame = mutated_summary[risk_lambda_to_plot]
+        plt.plot(df.index, df['t_return_ma'], label=rf'return ($\lambda$={risk_lambda_to_plot:d})')
+        plt.fill_between(df.index, df['t_return_ma'] - df['t_return_std'] * 2,
+                         df['t_return_ma'] + df['t_return_std'] * 2, alpha=0.5)
+        plt.plot(df.index, df['t_base_return_ma'], label=rf'cashflow ($\lambda$={risk_lambda_to_plot:d})')
+        plt.fill_between(df.index, df['t_base_return_ma'] - df['t_base_return_std'] * 2,
+                         df['t_base_return_ma'] + df['t_base_return_std'] * 2, alpha=0.5)
+        for index in df.index[df['mutation'] == 1]:
+            plt.plot([index, index], [df['t_return_ma'][index], df['t_base_return_ma'][index]], 'm--')
+        plt.legend(loc='best')
+        plt.gca().set(xlabel='iteration', ylabel='return (negative option price)')
+        fig2.savefig(f'plot/{exp_name}/mutate.png')
+
         plt.show()

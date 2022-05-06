@@ -28,6 +28,7 @@
 \output_sync 0
 \bibtex_command default
 \index_command default
+\float_placement H
 \paperfontsize default
 \spacing onehalf
 \use_hyperref true
@@ -736,10 +737,63 @@ with terminal condition
 \end_inset
 
  so that we don't run into adaptedness issues.
+ We briefly illustrate the modified QLBS model in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:qlbs-illustration"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename qlbs illustration.png
+	width 60line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+A brief illustration on the modified QLBS environment.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-illustration"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Subsection
-Experiment Set-up
+Specification
 \end_layout
 
 \begin_layout Standard
@@ -812,7 +866,12 @@ reference "eq:qlbs-modified-reward"
 , is computed empirically by averaging samples from a fixed number of additional
  trajectories under the current policy.
  At the beginning of each episode, the parameters are adjusted in a random
- fashion to help the agent explore different settings and help avoid overfitting.
+ fashion to help the agent explore different settings and help avoid overfitting
+; the adjustment obeys a Poisson process with intensity 
+\begin_inset Formula $\varUpsilon$
+\end_inset
+
+.
 \end_layout
 
 \begin_layout Subsubsection
@@ -864,7 +923,17 @@ In pratice, we prefer a stochastic policy since it encourages exploration
 \end_inset
 
  are parametrized by two separate neural networks with the Resnet skip-connectio
-n structure.
+n 
+\begin_inset Marginal
+status open
+
+\begin_layout Plain Layout
+ref
+\end_layout
+
+\end_inset
+
+ structure.
  
 \begin_inset Marginal
 status open
@@ -964,22 +1033,528 @@ ref?
 In our implementation, the policy network and the value network have the
  same latent dimension 10 and they are composed of two Resnet blocks with
  two hidden affine transforms.
- We use the Adam optimizers to update the networks, one for each, with learning
- rate set to 
-\begin_inset Formula $0.001$
+ We use the Adam optimizers to update the networks, one for each.
+\end_layout
+
+\begin_layout Subsection
+Experiments and Results
+\end_layout
+
+\begin_layout Standard
+We include a variety of experiments, starting from a demonstration that
+ shows the agent learns over time, moving to a comparison with the Black-Scholes
+ baseline model, and finally exploring other directions that have a stronger
+ connection to finance.
+\end_layout
+
+\begin_layout Subsubsection
+Demonstration on learning
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Demonstration-on-learning"
+
 \end_inset
 
 
-\begin_inset Foot
-status open
+\end_layout
+
+\begin_layout Standard
+We start by showing that the policy gradient algorithm has been correctly
+ implemented and the agent learns well over time.
+ The environment parameter is set to 
+\begin_inset Formula $r=0.01,\sigma=0.1,\mu=0,T=5,K=1,S_{0}=1,\Delta t=1,\lambda\in\left\{ 0,1,2,3\right\} ,\epsilon=0$
+\end_inset
+
+ in Sec.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Demonstration-on-learning"
+
+\end_inset
+
+, 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Influence-of-risk"
+
+\end_inset
+
+, and 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Effect-of-transaction"
+
+\end_inset
+
+ unless otherwise specified.
+ As shown in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:qlbs-exp1-learning"
+
+\end_inset
+
+, the episodic return flatterns after training for around 3000 steps.
+ It is worth noticing that the cashflow return part 
+\begin_inset Formula 
+\[
+\sum_{t=0}^{T-1}\bE^{\pi}\left[-\left(1-\frac{t}{T}\right)\Pi_{t}\left(X_{t}\right)+\left(1-\frac{t+1}{T}\right)\Pi_{t}\left(X_{t}\right)\right]=\bE^{\pi}\left[\Pi_{0}\left(X_{0}\right)\right]
+\]
+
+\end_inset
+
+is slightly smaller for a large risk parameter 
+\begin_inset Formula $\lambda$
+\end_inset
+
+, implying that the agent learns to make a trade-off between the cash-flow
+ and the risk component.
+ 
+\end_layout
+
+\begin_layout Standard
+To prepare for learning in a much broader setting, we allow the initial
+ price to be adjusted at a given intensity 
+\begin_inset Formula $\varUpsilon$
+\end_inset
+
+.
+ We mark out the episodes that the adjustments take place (Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:qlbs-exp1-mutate"
+
+\end_inset
+
+) and it seems that the agent can swiftly adapt to the change.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
 
 \begin_layout Plain Layout
-check before submitting
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename qlbs/experiment1/learning-curve.png
+	width 45line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+No adjustment on environment parameters.
+ The shade indicates 95% confidence interval.
+ Learning rate set to 
+\begin_inset Formula $10^{-4}$
+\end_inset
+
+.
 \end_layout
 
 \end_inset
 
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-exp1-learning"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\begin_inset space \qquad{}
+\end_inset
+
+
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename qlbs/experiment1/mutate.png
+	width 45line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Adjustment parameter (on the initial price) 
+\begin_inset Formula $\varUpsilon=0.005$
+\end_inset
+
+, indicated by purple lines.
+ The shade indicates 95% confidence interval.
+ Learning rate set to 
+\begin_inset Formula $10^{-4}$
+\end_inset
+
 .
+ 
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-exp1-mutate"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Exponentially moving average of episodic return.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-exp1"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+Influence of risk parameter 
+\begin_inset Formula $\lambda$
+\end_inset
+
+
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Influence-of-risk"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We wish to compare the optimal price under different choices of the risk
+ aversion parameter 
+\begin_inset Formula $\lambda$
+\end_inset
+
+.
+ A priori estimate is that a larger 
+\begin_inset Formula $\lambda$
+\end_inset
+
+ leads to a higher price learnt, since it penalizes improper hedges harder.
+ To complete the comparision, we also introduce the vanilla BS hedging strategy
+ 
+\begin_inset Formula $\pi_{\text{BS}}$
+\end_inset
+
+ and learns the episodic return using the same neural network parametrization.
+ The results are shown in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:qlbs-exp2"
+
+\end_inset
+
+.
+ We remind the readers that the option prices are defined as the negative
+ value function, so a lower option price implies a larger return learnt.
+ As we expect, a large 
+\begin_inset Formula $\lambda$
+\end_inset
+
+ does lead to a higher price, both under BS policy and under the learnt
+ policy.
+ In general, the policy learnt by the neural network parametrization is
+ a bit sub-optimal compared to the BS policy, but it performs better when
+ 
+\begin_inset Formula $\lambda=0.$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename qlbs/experiment2/option-price.png
+	width 75line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Negative episodic returns as option prices.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-exp2"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+Effect of transaction cost
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Effect-of-transaction"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Next, we'd like to examine the effect of transaction costs.
+ As indicated by the self-financing condition (Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:qlbs-modified-self-financing"
+
+\end_inset
+
+), a higher trading cost can significantly bias the portfolio value process
+ and consequently increase the optimal price learnt.
+ As shown in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:qlbs-exp3"
+
+\end_inset
+
+, we compare the price and hedge position learnt under different friction
+ parameters 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+.
+ In general, a larger 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+ does lead to a higher price learned (shown in the left half) and the hedge
+ position is usually always higher (in the right half).
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename qlbs/experiment3/price-hedge.png
+	width 100line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Option priced and hedged under different transaction cost parameters 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+.
+ 
+\begin_inset Formula $\lambda$
+\end_inset
+
+ is set to 0.5 to introduce some risk concerns.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-exp3"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+Generalization power
+\end_layout
+
+\begin_layout Standard
+As a concluding setting, we wish to parametrize the policy and baseline
+ networks on not only the states but also the environment parameters and
+ examine the generalization power.
+ We pick two set of parameters: 
+\begin_inset Formula $r=0.01,\mu=0,\sigma=0.1,\lambda=0.5,\epsilon=0$
+\end_inset
+
+ under the first condition while 
+\begin_inset Formula $r=0.02,\mu=0.1,\sigma=0.2,\lambda=1.5,\epsilon=0.1$
+\end_inset
+
+ under the second condition.
+ We train a policy and baseline under these two conditions mixed, i.e.
+ they have the same probability of being presented, with the switching process
+ being a Poisson process.
+ After training for a while, we refine the agent to learn a third condition
+ where the parameters are set to the arithmic average of the given two condition
+s.
+ As shown in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:qlbs-exp4"
+
+\end_inset
+
+, we examine the hedging strategy of the agent before and after fine tuning
+ to the third average condition.
+ The result, that the fine tuning does a great improvement, is not surprising
+ since we don't expect a lot of generalization power.
+ However, one could expect such generalization given enough amount of training
+ time.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename qlbs/experiment4/price-hedge.png
+	width 100line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Option priced and hedged under different conditions.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-exp4"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Section
@@ -1175,7 +1750,60 @@ reference "eq:qlbs-modified-self-financing"
 \end_layout
 
 \begin_layout Standard
-As we mentioned in the previous paragraph, we stack a few
+As we mentioned in the previous paragraph, we stack a few....
+ We briefly illustrate the stucture of RLOP in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:rlop-illustration"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename rlop illustration.png
+	width 60line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+A brief illustration on the modified RLOP environment.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:rlop-illustration"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Section

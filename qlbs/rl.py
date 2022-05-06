@@ -121,7 +121,10 @@ class NNBaseline(Baseline):
             self.load(from_filename)
 
     def _predict(self, tensor):
-        return self.net(tensor[:, [0, 2, 3]].float())
+        if self.simplified:
+            return self.net(tensor[:, [0, 2, 3]].float())
+        else:
+            return self.net(tensor.float())
 
     def __call__(self, state: State, info: Info):
         tensor = state.to_tensor(info)[None, :]
@@ -170,7 +173,8 @@ class NNBaseline(Baseline):
 
 
 def policy_gradient(env: Env, pi: Policy, V: Baseline, episode_n: int, *, ax: plt.Axes = None,
-                    axs_env: Tuple[plt.Axes] = None, V_frozen: bool = False, pi_frozen: bool = False):
+                    axs_env: Tuple[plt.Axes] = None, V_frozen: bool = False, pi_frozen: bool = False,
+                    plot: bool = True):
     collector = util.EMACollector(half_life=100, t_return=None, t_base_return=None)
     if ax is None:
         fig, ax = plt.subplots()
@@ -218,7 +222,7 @@ def policy_gradient(env: Env, pi: Policy, V: Baseline, episode_n: int, *, ax: pl
         collector.append(t_return=t0_return, t_base_return=t0_return + t0_risk)
         pbar.set_description(
             f't0_return={t0_return:.2e};t0_risks={t0_risk:.2e};r={info.r:.4f};mu={info.mu:.4f};sigma={info.sigma:.4f};K={info.strike_price:.4f}')
-        if (e + 1) % 100 == 0 and ax is not None:
+        if (e + 1) % 100 == 0 and ax is not None and plot:
             ax.cla()
             collector.plot(ax)
             ax.set(ylabel='return (=negative option price)')
