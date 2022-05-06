@@ -6,3 +6,4 @@ sync*
 *~
 *.pdf
 trained_model/
+__pycache__
