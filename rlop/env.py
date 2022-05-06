@@ -14,21 +14,23 @@ from util.sample import geometricBM
 
 
 class Info:
-    def __init__(self, strike_price: np.sctypes, r: np.sctypes, mu: np.sctypes, sigma: np.sctypes, _dt: np.sctypes):
+    def __init__(self, strike_price: np.sctypes, r: np.sctypes, mu: np.sctypes, sigma: np.sctypes, _dt: np.sctypes,
+                 friction: float):
         self.strike_price = strike_price
         self.r = r
         self.mu = mu
         self.sigma = sigma
         self._dt = _dt
+        self.friction = friction
 
 
 class State:
-    def __init__(self, normalized_asset_price: np.sctypes, remaining_time: int, portfolio_value: np.ndarray):
+    def __init__(self, normalized_asset_price: np.sctypes, remaining_step: int, portfolio_value: np.ndarray):
         self.normalized_asset_price = normalized_asset_price
-        self.remaining_time = remaining_time  # a.k.a. rt
+        self.remaining_step = remaining_step  # a.k.a. rt
         self.portfolio_value = portfolio_value  # shape=(rt,)
 
-    def to_tensors(self, info):
+    def to_tensors(self, info: Info):
         return [torch.tensor([
             self.normalized_asset_price,
             (t + 1) * info._dt,
@@ -36,17 +38,18 @@ class State:
             util.standard_to_normalized_price(info.strike_price, info.mu, info.sigma, t + 1, info._dt),
             info.r,
             info.mu,
-            info.sigma
-        ]).float() for t in range(self.remaining_time)]
+            info.sigma,
+            info.friction,
+        ]).float() for t in range(self.remaining_step)]
 
 
 class SamplePool:
     def __init__(self, max_time: int, size: int = 20):
         self.size = size
         self.max_time = max_time
-        self.counter = 0
-        self.gBM = np.empty((self.size, self.max_time+1))
-        self.BM = np.empty((self.size, self.max_time+1))
+        self.counter = size
+        self.gBM = np.empty((self.size, self.max_time + 1))
+        self.BM = np.empty((self.size, self.max_time + 1))
 
     def update(self, initial_asset_price, mu, sigma, _dt):
         self.initial_asset_price = initial_asset_price
@@ -67,14 +70,14 @@ class SamplePool:
 
 class RLOPEnv(gym.Env):
     def __init__(self, is_call_option: bool, strike_price: np.sctypes, max_time: int, mu: np.sctypes, sigma: np.sctypes,
-                 r: np.sctypes, initial_estimator: InitialEstimator, initial_asset_price: np.sctypes, *,
-                 mutation: float = 0.01, _dt: float = 1):
+                 r: np.sctypes, friction: float, initial_estimator: InitialEstimator, initial_asset_price: np.sctypes,
+                 *, mutation: float = 0.01, _dt: float = 1):
         # Environment constants, or stay constant for quite a long time
         self.is_call_option = is_call_option
         self.max_time = max_time
         self.initial_estimator = initial_estimator
         self.initial_asset_price = initial_asset_price
-        self.info = Info(strike_price, r, mu, sigma, _dt)
+        self.info = Info(strike_price, r, mu, sigma, _dt, friction)
         self.mutation = mutation
         self._dt = _dt
         self.sample_pool = SamplePool(self.max_time)
@@ -82,6 +85,7 @@ class RLOPEnv(gym.Env):
         # Episodic variables
         self.current_time = max_time
         self.portfolio_value_history = np.zeros((self.max_time + 1, self.max_time))
+        self.old_action = np.zeros(self.max_time)
 
         # For rendering
         self.fig, self.axs = None, None
@@ -92,7 +96,7 @@ class RLOPEnv(gym.Env):
     def describe_state(self):
         return State(
             normalized_asset_price=self._normalized_price[self.current_time],
-            remaining_time=self.max_time - self.current_time,
+            remaining_step=self.max_time - self.current_time,
             portfolio_value=self.portfolio_value,
         )
 
@@ -109,13 +113,14 @@ class RLOPEnv(gym.Env):
         # compute the cash position
         cash_tau = self.portfolio_value - action * S_tau
         cash_t = cash_tau * np.exp(self.info.r * self._dt)
-        portfolio_value_t = cash_t + action * S_t
+        portfolio_value_t = cash_t + action * S_t - self.info.friction * np.abs(action - self.old_action) * S_t
 
         payoff = util.payoff_of_option(self.is_call_option, S_t, self.info.strike_price)
         reward = -np.abs(payoff - portfolio_value_t[0])
         # reward = -(payoff - portfolio_value_t[0]) ** 2
 
         self.portfolio_value = portfolio_value_t[1:]
+        self.old_action = action[1:]
         self.portfolio_value_history[t, t - 1:] = portfolio_value_t
         self.current_time += 1
         done = self.current_time == self.max_time
@@ -139,6 +144,7 @@ class RLOPEnv(gym.Env):
             self.initial_estimator(self.initial_asset_price, self.info.strike_price, t + 1, self.info.r,
                                    self.info.sigma, self._dt) for t in range(self.max_time)])
         self.portfolio_value_history[0, :] = self.portfolio_value
+        self.old_action = np.zeros(self.max_time)
 
         return self.describe_state(), self.info
 
@@ -194,9 +200,10 @@ register(id='RLOP-v0', entry_point='rlop.env:RLOPEnv')
 class Test(TestCase):
     def test_step(self):
         import matplotlib as mpl
+        from rlop.rl import BSInitialEstimator
         mpl.use('TkAgg')
-        env = RLOPEnv(is_call_option=True, strike_price=100, max_time=5, mu=0.5e-2, sigma=1e-2, r=0.025e-2,
-                      initial_portfolio_value=np.array([1, 2, 3, 4, 5]), initial_asset_price=100)
+        env = RLOPEnv(is_call_option=True, strike_price=100, max_time=5, mu=0.5e-2, sigma=1e-2, r=0.025e-2, friction=0,
+                      initial_estimator=BSInitialEstimator(True), initial_asset_price=100)
 
         while True:
             (state, info), done = env.reset(), False

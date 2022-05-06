@@ -3,6 +3,7 @@ from typing import Tuple, Callable, Union
 import gym
 import numpy as np
 import torch
+from gym import register
 
 import util
 from util.sample import geometricBM
@@ -146,21 +147,16 @@ class QLBSEnv(gym.Env):
         hedge = hedge_long.reshape(RS, self.max_step - t, order='F')
         hedge[:, 0] = action
 
+        # compute discounted stock price and value change
         discount = np.power(self.gamma, t_arr_broad)
         discounted_S = discount * GBM
         discounted_cashflow = hedge * (discounted_S[:, 1:] - discounted_S[:, :-1])
         extended_hedge = np.concatenate((hedge, np.zeros((RS, 1))), axis=1)
-        discounted_tc = self.info.friction * discount[:, 1:] * util.abs(extended_hedge[:, 1:] - extended_hedge[:, :-1]) * GBM[:, 1:]
+        discounted_tc = self.info.friction * discount[:, 1:] * util.abs(
+            extended_hedge[:, 1:] - extended_hedge[:, :-1]) * GBM[:, 1:]
         end_value = util.payoff_of_option(self.is_call_option, GBM[:, -1], self.info.strike_price)
 
-        # cum_value_change = np.cumsum(discounted_cashflow[:, ::-1], axis=1)[:, ::-1]
-        # discounted_value = np.broadcast_to(end_value[:, None], (RS, self.max_step - t)) * np.power(self.gamma,
-        #                                                                                            self.max_step - t) - cum_value_change
-        # value = discounted_value / np.power(self.gamma, t_arr_broad[:, :-1])
-        # from qlbs.bs import BSInitialEstimator
-        # estimate = BSInitialEstimator(self.is_call_option)(GBM, self.info.strike_price, t_arr_broad[:, ::-1],
-        #                                                    self.info.r, self.info.sigma, self.info._dt)
-
+        # sum up change and compute the expected portfolio value and its variance
         total_value_change = np.sum(discounted_cashflow, axis=1)
         total_tc = np.sum(discounted_tc, axis=1)
         t_value = end_value * np.power(self.gamma, self.max_step - t) - total_value_change + total_tc
@@ -197,3 +193,6 @@ class QLBSEnv(gym.Env):
             self.initial_asset_price = np.clip(
                 self.initial_asset_price + 1e-1 * np.random.randn(1)[0] - 0.1 * (self.initial_asset_price - 1), 0.7,
                 1.3)
+
+
+register(id='QLBS-v0', entry_point='qlbs.env:QLBSEnv')
