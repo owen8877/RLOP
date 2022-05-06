@@ -1248,6 +1248,78 @@ literal "false"
  if allowed within the timeframe.
 \end_layout
 
+\begin_layout Section
+Video Transcript
+\end_layout
+
+\begin_layout Standard
+Hello! It's my pleasure to introduce our recent project on RL methods in
+ option pricing.
+ We aim to build a set of environments that captures the essence of the
+ underlying financial insight while enabling machine learning in this regime.
+ To begin with, option is a type of derivative contract, that gives the
+ holder the right so that one can choose to buy or sell a certain amount
+ of asset at a specific time.
+ There has been some very successful theories about option pricing, for
+ example the celebrated Black-Scholes formula.
+ The idea is to replicate the option payoff by managing a hedge portfolio
+ which involves the underlying asset and a cash account.
+ The Black-Scholes formula produces the optimal hedge position series 
+\begin_inset Formula $u_{t}$
+\end_inset
+
+ so that the payoff is perfectly replicated at the terminal time.
+ However, their theory relies on continuous rehedging and assumes zero trading
+ costs, which is either impractical or too harsh.
+\end_layout
+
+\begin_layout Standard
+In general, option pricing is a quite challenging problem.
+ One may fail to notice an improper hedging action until the terminal time,
+ let alone taking all the other constraints into account, for example discrete
+ time, transaction cost and lack of asset pricing models.
+ A recent paper by Igor Halperin in 2017 leverages RL theory to deal with
+ these issues where the the price of an option includes a cashflow part
+ and a variance part.
+ The cashflow part is from Black-Scholes formula, while the variance part
+ captures the risk from a variety range of factors.
+ Besides, this approach does not assume an explicit model for the underlying
+ trajectory, which saves the trouble of learning the pricing model.
+ With that being said, the QLBS approach is not a fully interactive RL problem
+ since the optimal hedging strategy is solved analytically instead of learning
+ from exploration.
+\end_layout
+
+\begin_layout Standard
+In this work, we modify the reward and value function so that it enables
+ learning by policy-based methods.
+ The cashflow part is adjusted by the remaining time to the terminal time
+ and the risk part uses the standard deviation so that it is invariant under
+ scaling.
+ The agent, under the actor-critic framework, learns the price of the option
+ as the negative optimal value function.
+ We adopt the policy gradient method to train the agent via an online fashion.
+ Through a few numerical experiments, we show how the risk aversion parameter
+ and trading cost could influence the optimal price learnt.
+ We also compare the optimal price learnt with the one predicted by the
+ Black-Scholes formula to better understand the risk premium.
+ More details are included in the report.
+\end_layout
+
+\begin_layout Standard
+We also propose a novel approach which examines the hedge portfolio and
+ the option payoff at the terminal time.
+ Since the reward may come in a sparse manner as the agent has no idea how
+ it is performing before the terminal time, we stack a class of option replicati
+on tasks together so that the agent learns how to price a family of options
+ at the same time.
+ This framework is more straightforward, but it is harder to incorporate
+ the risk concerns.
+ We hope that our work can motivate and inspire deeper research of RL in
+ the finance field.
+ Thank you.
+\end_layout
+
 \begin_layout Standard
 \begin_inset CommandInset bibtex
 LatexCommand bibtex
