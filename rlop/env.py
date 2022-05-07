@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Iterable
+from typing import Optional, Tuple, Iterable, Callable, Union
 from unittest import TestCase
 
 import gym
@@ -69,23 +69,23 @@ class SamplePool:
 
 
 class RLOPEnv(gym.Env):
-    def __init__(self, is_call_option: bool, strike_price: np.sctypes, max_time: int, mu: np.sctypes, sigma: np.sctypes,
+    def __init__(self, is_call_option: bool, strike_price: np.sctypes, max_step: int, mu: np.sctypes, sigma: np.sctypes,
                  r: np.sctypes, friction: float, initial_estimator: InitialEstimator, initial_asset_price: np.sctypes,
-                 *, mutation: float = 0.01, _dt: float = 1):
+                 *, mutation: Union[float, Callable] = 0.01, _dt: float = 1):
         # Environment constants, or stay constant for quite a long time
         self.is_call_option = is_call_option
-        self.max_time = max_time
+        self.max_step = max_step
         self.initial_estimator = initial_estimator
         self.initial_asset_price = initial_asset_price
         self.info = Info(strike_price, r, mu, sigma, _dt, friction)
         self.mutation = mutation
         self._dt = _dt
-        self.sample_pool = SamplePool(self.max_time)
+        self.sample_pool = SamplePool(self.max_step)
 
         # Episodic variables
-        self.current_time = max_time
-        self.portfolio_value_history = np.zeros((self.max_time + 1, self.max_time))
-        self.old_action = np.zeros(self.max_time)
+        self.current_time = max_step
+        self.portfolio_value_history = np.zeros((self.max_step + 1, self.max_step))
+        self.old_action = np.zeros(self.max_step)
 
         # For rendering
         self.fig, self.axs = None, None
@@ -96,7 +96,7 @@ class RLOPEnv(gym.Env):
     def describe_state(self):
         return State(
             normalized_asset_price=self._normalized_price[self.current_time],
-            remaining_step=self.max_time - self.current_time,
+            remaining_step=self.max_step - self.current_time,
             portfolio_value=self.portfolio_value,
         )
 
@@ -123,7 +123,7 @@ class RLOPEnv(gym.Env):
         self.old_action = action[1:]
         self.portfolio_value_history[t, t - 1:] = portfolio_value_t
         self.current_time += 1
-        done = self.current_time == self.max_time
+        done = self.current_time == self.max_step
 
         return self.describe_state(), reward, done, self.info
 
@@ -142,9 +142,9 @@ class RLOPEnv(gym.Env):
         self.current_time = 0
         self.portfolio_value = np.array([
             self.initial_estimator(self.initial_asset_price, self.info.strike_price, t + 1, self.info.r,
-                                   self.info.sigma, self._dt) for t in range(self.max_time)])
+                                   self.info.sigma, self._dt) for t in range(self.max_step)])
         self.portfolio_value_history[0, :] = self.portfolio_value
-        self.old_action = np.zeros(self.max_time)
+        self.old_action = np.zeros(self.max_step)
 
         return self.describe_state(), self.info
 
@@ -156,7 +156,7 @@ class RLOPEnv(gym.Env):
                 self.__init_render__()
             ax_stock, ax_option = self.axs
         tau = self.current_time
-        T = self.max_time
+        T = self.max_step
 
         ax_stock.cla()
         ax_stock.plot(np.arange(0, tau + 1), self._standard_price[0:tau + 1])
@@ -183,6 +183,10 @@ class RLOPEnv(gym.Env):
             plt.close(self.fig)
 
     def mutate_parameters(self):
+        if callable(self.mutation):
+            self.mutation(self)
+            return
+
         if np.random.rand(1) < self.mutation:
             self.info.r = np.clip(self.info.r * (1 + 0.1 * np.random.randn(1)[0]), 0, 2e-3)
         if np.random.rand(1) < self.mutation:
@@ -202,7 +206,7 @@ class Test(TestCase):
         import matplotlib as mpl
         from rlop.rl import BSInitialEstimator
         mpl.use('TkAgg')
-        env = RLOPEnv(is_call_option=True, strike_price=100, max_time=5, mu=0.5e-2, sigma=1e-2, r=0.025e-2, friction=0,
+        env = RLOPEnv(is_call_option=True, strike_price=100, max_step=5, mu=0.5e-2, sigma=1e-2, r=0.025e-2, friction=0,
                       initial_estimator=BSInitialEstimator(True), initial_asset_price=100)
 
         while True:

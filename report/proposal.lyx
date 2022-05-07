@@ -1136,7 +1136,7 @@ reference "fig:qlbs-exp1-mutate"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \begin_inset Float figure
@@ -1518,7 +1518,7 @@ reference "fig:qlbs-exp4"
 \begin_inset Float figure
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
 \align center
@@ -1807,6 +1807,319 @@ name "fig:rlop-illustration"
 
 \end_layout
 
+\begin_layout Subsection
+Specification
+\end_layout
+
+\begin_layout Standard
+In this section, we describe how to set-up the RLOP environment and the
+ necessary numerical procedures.
+\end_layout
+
+\begin_layout Subsubsection
+Environment
+\end_layout
+
+\begin_layout Standard
+...
+\end_layout
+
+\begin_layout Subsubsection
+Agent Parametrization
+\end_layout
+
+\begin_layout Standard
+...
+\end_layout
+
+\begin_layout Subsubsection
+Learning Algorithm
+\end_layout
+
+\begin_layout Subsection
+Experiments and Results
+\end_layout
+
+\begin_layout Standard
+We include a variety of experiments, including a demonstration that shows
+ the agent learns over time, a comparison with the Black-Scholes baseline
+ model, and a another one on the effect of trading costs.
+\end_layout
+
+\begin_layout Subsubsection
+Demonstration on learning
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Demonstration-on-learning-rlop"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We use a parameter setting similar to Sec.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Demonstration-on-learning"
+
+\end_inset
+
+ where 
+\begin_inset Formula $r=0.01,\sigma=0.1,\mu=0,T=5,K=1,S_{0}=1,\Delta t=1$
+\end_inset
+
+.
+ The agent is trained under no transaction cost with a fixed initial asset
+ value and the training curve is flat after around 8000 steps, shown in
+ Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:rlop-exp1-learns"
+
+\end_inset
+
+.
+ Similar to the QLBS setting, we introduce adjustment to the parameters
+ (i.e.
+ the initial asset value in the experiments to follow) by a Poisson process.
+ We mark where the adjustment occurs in the bottom half of the figure by
+ purple triangles.
+\end_layout
+
+\begin_layout Standard
+We also compare the optimal hedging strategy learnt with the BS predictions.
+ In general, the hedging curve should have a greater slope for a smaller
+ remaining time which implies that the price of the option is more sensitive
+ to the underlying asset price.
+ As expected, both the learnt position and the BS position show a greater
+ slope when approaching the terminal time.
+ The one learnt by our RL agent is slightly insensitve to the time variable.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename rlop/experiment1/learning-curve.png
+	width 47line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Episodic return improves during training.
+ Top figure: no adjustment on the initial price 
+\begin_inset Formula $S_{0}$
+\end_inset
+
+; bottom figure: the initial price is adjusted via a Poisson process.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:rlop-exp1-learns"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\begin_inset space \qquad{}
+\end_inset
+
+
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename rlop/experiment1/hedge_position.png
+	width 47line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Optimal hedge position learnt compared with BS predictions (Eqn.
+ ?).
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:rlop-exp1-hedge"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Demonstration the RLOP model learning curve and a comparison to the BS predictio
+ns.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:rlop-exp1"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsubsection
+Effect of transaction cost
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Effect-of-transaction-rlop"
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We proceed to measure how the transaction cost can effect the optimal hedging
+ strategy.
+ We use the same setting as laid out in Sec.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Effect-of-transaction"
+
+\end_inset
+
+ where 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+ is the friction parameter.
+ We plot the optimal hedging position learnt under different 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+ in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:rlop-exp2"
+
+\end_inset
+
+.
+ The general trend is that a large 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+ discourages hedging amounts, since it leads to a higher trading cost on
+ average.
+ A higher friction also leads to a larger distinction between positions
+ at different times, which implies that in an illuquid market, we need to
+ value the time variable more than in a liquid one.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\begin_inset Graphics
+	filename rlop/experiment2/hedge_position.png
+	width 100line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+Optimal hedging strategy learnt under different transaction costs.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:rlop-exp2"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
 \begin_layout Section
 Conclusion and Discussion
 \end_layout
@@ -1877,11 +2190,15 @@ literal "false"
  if allowed within the timeframe.
 \end_layout
 
-\begin_layout Section
+\begin_layout Standard
+\begin_inset Note Comment
+status collapsed
+
+\begin_layout Section*
 Video Transcript
 \end_layout
 
-\begin_layout Standard
+\begin_layout Plain Layout
 Hello! It's my pleasure to introduce our recent project on RL methods in
  option pricing.
  We aim to build a set of environments that captures the essence of the
@@ -1902,7 +2219,7 @@ Hello! It's my pleasure to introduce our recent project on RL methods in
  costs, which is either impractical or too harsh.
 \end_layout
 
-\begin_layout Standard
+\begin_layout Plain Layout
 In general, option pricing is a quite challenging problem.
  One may fail to notice an improper hedging action until the terminal time,
  let alone taking all the other constraints into account, for example discrete
@@ -1919,7 +2236,7 @@ In general, option pricing is a quite challenging problem.
  from exploration.
 \end_layout
 
-\begin_layout Standard
+\begin_layout Plain Layout
 In this work, we modify the reward and value function so that it enables
  learning by policy-based methods.
  The cashflow part is adjusted by the remaining time to the terminal time
@@ -1935,7 +2252,7 @@ In this work, we modify the reward and value function so that it enables
  More details are included in the report.
 \end_layout
 
-\begin_layout Standard
+\begin_layout Plain Layout
 We also propose a novel approach which examines the hedge portfolio and
  the option payoff at the terminal time.
  Since the reward may come in a sparse manner as the agent has no idea how
@@ -1947,6 +2264,11 @@ on tasks together so that the agent learns how to price a family of options
  We hope that our work can motivate and inspire deeper research of RL in
  the finance field.
  Thank you.
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard

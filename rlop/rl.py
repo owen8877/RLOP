@@ -59,6 +59,16 @@ class GaussianPolicy(Policy):
                     positions[t] = float(mu)
         return positions
 
+
+
+    def batch_action(self, tensors, random: bool = True):
+        with torch.no_grad():
+            mu, sigma = self._gauss_param(tensors)
+            if random:
+                return torch.randn(len(mu)) * sigma[:, 0] + mu[:, 0]
+            else:
+                return mu[:, 0]
+
     def update(self, delta, action, state, info, state_info_tensors=None, update_on: int = None):
         tensors = state.to_tensors(info) if state_info_tensors is None else state_info_tensors
 
@@ -102,18 +112,15 @@ class GaussianPolicy(Policy):
     def batch_update(self):
         return self.BatchUpdater(self)
 
-    def _save_path(self, filename: str):
-        return f'data/{filename}.pt'
-
     def save(self, filename: str):
-        util.ensure_dir(self._save_path(''))
+        util.ensure_dir(filename, need_strip_end=True)
         torch.save({
             'mu_net': self.theta_mu.state_dict(),
             'sigma_net': self.theta_sigma.state_dict(),
-        }, self._save_path(filename))
+        }, filename)
 
     def load(self, filename: str):
-        state_dict = torch.load(self._save_path(filename))
+        state_dict = torch.load(filename)
         self.theta_mu.load_state_dict(state_dict['mu_net'])
         self.theta_mu.eval()
         self.theta_sigma.load_state_dict(state_dict['sigma_net'])
@@ -185,19 +192,24 @@ class Test(TestCase):
 
         is_call_option = True
         initial_asset_price = 1
-        max_time = 3
+        max_time = 5
         itr = 10000
 
         strike_price = 1.000
-        mu = 1.0e-3
-        sigma = 1e-2
-        r = 1.0e-3
+        mu = 0.0e-3
+        sigma = 1e-1
+        r = 1.0e-2
         friction = 0
         simplified = True
+        mutation_lambda = 1e-2
 
-        env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=max_time, mu=mu, sigma=sigma,
+        def mutate(env: RLOPEnv):
+            if np.random.rand(1)[0] < mutation_lambda:
+                env.initial_asset_price = np.random.rand(1)[0] * 0.4 + 0.8
+
+        env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=max_time, mu=mu, sigma=sigma,
                       r=r, friction=friction, initial_estimator=BSInitialEstimator(is_call_option),
-                      initial_asset_price=initial_asset_price)
+                      initial_asset_price=initial_asset_price, mutation=mutate)
 
         pi = GaussianPolicy(simplified, 1e-3)
         collector = policy_gradient_for_stacked(env, pi, itr, axs_env=True, batch=True, last_day_train_only=False)
@@ -225,7 +237,7 @@ class Test(TestCase):
                 r = 1.0e-3
                 friction = 0.
 
-                env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=sub_max_time, mu=mu,
+                env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=sub_max_time, mu=mu,
                               sigma=sigma, r=r, friction=friction, initial_estimator=BSInitialEstimator(is_call_option),
                               initial_asset_price=initial_asset_price)
 
@@ -253,7 +265,7 @@ class Test(TestCase):
 
         max_time = int(np.round(T / _dt))
 
-        env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_time=max_time, mu=mu, sigma=sigma,
+        env = RLOPEnv(is_call_option=is_call_option, strike_price=strike_price, max_step=max_time, mu=mu, sigma=sigma,
                       r=r, friction=friction, initial_estimator=BSInitialEstimator(is_call_option),
                       initial_asset_price=initial_asset_price, mutation=0, _dt=_dt)
         pi = BSPolicy(is_call=is_call_option)
