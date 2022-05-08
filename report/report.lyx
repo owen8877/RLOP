@@ -145,29 +145,82 @@ In this work, we build two environments, namely the modified QLBS and RLOP
 \end_layout
 
 \begin_layout Section
-Introduction
+Introduction and Background
 \end_layout
 
 \begin_layout Standard
-\begin_inset Marginal
-status open
-
-\begin_layout Plain Layout
-[Rework needed]
+Option pricing is one of the central and open questions in the mathematical
+ finance field.
+ It motivates the advancement of the stochastic process theory and becomes
+ one of the pratical applications of the sophisticated theories.
+ To begin with, option is a type of derivative that gives the holder the
+ right, but not the obligation, to buy or sell the underlying asset at a
+ specified price (a.k.a.
+ the strike price) within a specific period.
+ The name `derivative' implies that those securities are derived from the
+ origin asset.
+ Although investors can long and short options for seeking risky profits,
+ one primary feature of options is to obtain a certain share of assets with
+ a fixed amount of payment in the future.
+ This helps to control volatility and uncertainty.
+ Thus, the market maker who sells the option charges the buyer a certain
+ amount of fee that amounts the expected risk.
 \end_layout
+
+\begin_layout Standard
+We focus on the European call in this paper.
+ One can only exercise a european option at the terminal time and a call
+ option gives the holder the right to buy.
+ The holder usually exercises the european call if the asset price ends
+ up above the strike price and takes no action otherwise.
+ If the market is liquid enough, the holder can sell the asset immediately
+ after obtaining it, making the marginally profit.
+ Therefore, we define the payoff of a european call as
+\begin_inset Formula 
+\begin{equation}
+\text{payoff}=\max\left\{ S-K,0\right\} \label{eq:intro-payoff}
+\end{equation}
 
 \end_inset
 
- In this project, we are going to price options by using reinforcement learning.
- To achieve this goal, we need to replicate the payoff of options at different
- times and under different situations by holding and selling the underlying
- stocks at different times and under different situations.
- Since the whole portfolio will be self-financing, and at each step, different
- hedging strategies will make different value trajectories.
- In other words, to price options, people need to hedge a short position
- of the options.
- Therefore, our question is a sequential problem.
+where 
+\begin_inset Formula $S$
+\end_inset
+
+ is the asset price at the exercise time and 
+\begin_inset Formula $K$
+\end_inset
+
+ stands for the strike price.
+ Although it is tempting to price the option based on this payoff function
+ with consideration of each path probability, this is usually not the best
+ way since the option is designed to measure the risk of obtaining such
+ asset.
+ If there is a general trend of the price process, one can hold a consistent
+ position in the asset and purchase an option in addition.
+ Thus, the more popular approach is to manage a portfolio that replicates
+ the option, i.e.
+ the holder invests the same amount of money as the price of the option
+ in a replication portfolio and gets the same amount of payoff (Eqn.
  
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:intro-payoff"
+
+\end_inset
+
+) at the terminal time.
+ The portfolio borrows some extra funds from an external risk-free source
+ to hold a long position of the underlying asset and adjusts its position
+ according to the change in the asset price.
+ This approach is referred to as the replication by portfolio method.
+\end_layout
+
+\begin_layout Standard
+We conduct a brief review in this section, starting by introducing the Black-Sch
+oles model which solves the optimal hedging strategy and the pricing problem
+ at the same time, moving to a literature review where multiple types of
+ asset pricing are involved, and discussing how to model transaction costs.
 \end_layout
 
 \begin_layout Subsection
