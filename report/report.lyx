@@ -102,19 +102,46 @@ filename "math_shorthand.lyx"
 \end_layout
 
 \begin_layout Title
-Proposal of 
-\begin_inset Quotes eld
+RLOP: RL Methods in Option Pricing from a Mathematical Perspective
+\end_layout
+
+\begin_layout Author
+Ziheng Chen
+\begin_inset Foot
+status open
+
+\begin_layout Plain Layout
+email: 
+\begin_inset CommandInset href
+LatexCommand href
+name "stokes615@utexas.edu"
+type "mailto:"
+literal "true"
+
 \end_inset
 
-RLOP: Reinforcement Learning in Option Pricing
-\begin_inset Quotes erd
+
+\begin_inset Newline newline
+\end_inset
+
+We thank Zhou Fang for his initial motivation and helpful discussion on
+ the financial aspects.
+\end_layout
+
 \end_inset
 
 
 \end_layout
 
-\begin_layout Author
-Ziheng Chen, Zhou Fang
+\begin_layout Abstract
+In this work, we build two environments, namely the modified QLBS and RLOP
+ models, from a mathematics perspective which enables RL methods in option
+ pricing through replicating by portfolio.
+ We implement the environment specifications, the learning algorithm, and
+ agent parametrization by neural network.
+ The learnt optimal hedging strategy is compared against the BS prediction.
+ The effect of various factors are consdered and studied based on how they
+ affect the optimal price and position.
 \end_layout
 
 \begin_layout Section
@@ -122,7 +149,16 @@ Introduction
 \end_layout
 
 \begin_layout Standard
-In this project, we are going to price options by using reinforcement learning.
+\begin_inset Marginal
+status open
+
+\begin_layout Plain Layout
+[Rework needed]
+\end_layout
+
+\end_inset
+
+ In this project, we are going to price options by using reinforcement learning.
  To achieve this goal, we need to replicate the payoff of options at different
  times and under different situations by holding and selling the underlying
  stocks at different times and under different situations.
@@ -164,7 +200,16 @@ literal "false"
 \end_layout
 
 \begin_layout Standard
+\begin_inset Marginal
+status open
+
+\begin_layout Plain Layout
 [How discrete time can add another extra offset to the model]
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Subsection
@@ -199,7 +244,7 @@ literal "false"
  The first method, LSPI (LS policy iteration), combines LSTD (LS with TD
  update) and policy iteration together to achieve efficient learning.
  The second and third ones, FQI (fitted Q-iteration algorithm) and LSMC
- (Least squares Monte Carlo), take an DP approach where the exact exercising
+ (Least squares Monte Carlo), take a DP approach where the exact exercising
  problem is solved at each trading moment; the only difference lies in that
  FDI takes a forward view in time while LSMC is backward, starting from
  the exercising time.
@@ -323,7 +368,62 @@ name "subsec:Trading-Cost"
 \end_layout
 
 \begin_layout Standard
-[TBA]
+One other important factor in option pricing is the trading cost (or transaction
+ cost, used interchangeably).
+ The trading cost occurs when the hedging position of the replication portfolio
+ changes, making a portion of the invested capital unavailable.
+ Thus, the presence of trading cost increases the price of the option in
+ general.
+\end_layout
+
+\begin_layout Standard
+A way of understanding and modeling the trading cost is to use the concept
+ of bid-ask spread.
+ Consider the limit order book of a particular asset at a given time.
+ Empirical observation shows that the selling (a.k.a.
+ ask) orders are always above the buying orders (a.k.a.
+ bid) orders since one wishes to buy low and sell high.
+ Moreover, the orders are not uniformly distributed: there are fewer orders
+ close to the mid price (i.e.
+ the arithmetic average of the highest bid and lowest ask) and more orders
+ away from the mid price.
+ The gap between the lowest ask and highest bid is called the bid-ask spread.
+ A larger gap usually implies a higher friction in the market.
+\end_layout
+
+\begin_layout Standard
+In general, the dynamics of the limit order book distribution is a very
+ challenging problem.
+ However, under the assumption that the replicating portfolio hedges a small
+ position, we can safely conclude that the trading cost, defined as the
+ additional cost paid for buying (or selling, correspondingly) a unit of
+ asset with reference to its mid price, can be computed as follows
+\begin_inset Formula 
+\[
+\text{Trading cost (TC)}=S_{\text{ask}}-S_{\text{mid}}=\frac{1}{2}\left(S_{\text{ask}}-S_{\text{bid}}\right)=\frac{1}{2}\text{spread}.
+\]
+
+\end_inset
+
+To model the spread, we assume that it scales with the mid price by a factor
+ of 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+, characterizing the friction.
+ Thus, the trading cost to buy/sell 
+\begin_inset Formula $\Delta u$
+\end_inset
+
+ shares of the asset requires a trading cost of
+\begin_inset Formula 
+\[
+\text{TC}\left(\Delta u,S_{\text{mid}}\right)=\frac{\epsilon}{2}S_{\text{mid}}\Delta u.
+\]
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Section
@@ -802,7 +902,14 @@ In this section, we describe how to set-up the QLBS environment and the
 \end_layout
 
 \begin_layout Subsubsection
-Environment
+Environment 
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Environment"
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
@@ -875,7 +982,14 @@ reference "eq:qlbs-modified-reward"
 \end_layout
 
 \begin_layout Subsubsection
-Agent Parametrization
+Agent Parametrization 
+\begin_inset CommandInset label
+LatexCommand label
+name "subsec:Agent-Parametrization"
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
@@ -922,28 +1036,15 @@ In pratice, we prefer a stochastic policy since it encourages exploration
 \begin_inset Formula $\sigma_{\pi}$
 \end_inset
 
- are parametrized by two separate neural networks with the Resnet skip-connectio
-n 
-\begin_inset Marginal
-status open
-
-\begin_layout Plain Layout
-ref
-\end_layout
+ are parametrized by two separate neural networks with the Resnet 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "he2016deep"
+literal "false"
 
 \end_inset
 
- structure.
- 
-\begin_inset Marginal
-status open
-
-\begin_layout Plain Layout
-Illustration on resnet
-\end_layout
-
-\end_inset
-
+ skip-connection structure.
  The Resnet structure is composed of three parts:
 \end_layout
 
@@ -953,7 +1054,7 @@ Pre-processing
 \end_inset
 
 , that lifts the (8-dimensional) input to the latent dimension by an affine
- transform and ac activation funciton 
+ transform and an activation funciton 
 \begin_inset Formula $\Xi$
 \end_inset
 
@@ -999,6 +1100,59 @@ Thus, the Resnet realization can be formally written as
 \end_inset
 
 .
+ We include an illustration in Fig.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:qlbs-resnet"
+
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status collapsed
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename resnet illustration.png
+	width 80line%
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Caption Standard
+
+\begin_layout Plain Layout
+An illustration on a Resnet-motivated network structure.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:qlbs-resnet"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Subsubsection
@@ -1011,22 +1165,21 @@ Since the action space
 \end_inset
 
  is a continuous space, it is nature to adopt a policy-based method.
- Here we opt-in the classical Critic-Actor model where the policy components
- relies on the value estimator to learn quickly and reliably while the value
- estimator learns from empirical averages of Monte Carlo samples.
+ Here we opt-in the classical REINFORCE algorithm with baseline where the
+ policy components relies on the value estimator to learn quickly and reliably
+ while the value estimator learns from empirical averages of Monte Carlo
+ samples.
  The value estimator, parameterized by a neural network, uses the same Resnet
  structure as mentioned in the previous section.
- We refer to the REINFORCE algorithm 
-\begin_inset Marginal
-status open
-
-\begin_layout Plain Layout
-ref?
-\end_layout
+ We refer to 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "sutton2018reinforcement"
+literal "false"
 
 \end_inset
 
- for details.
+ for more details.
 \end_layout
 
 \begin_layout Standard
@@ -1751,7 +1904,31 @@ reference "eq:qlbs-modified-self-financing"
 \end_layout
 
 \begin_layout Standard
-As we mentioned in the previous paragraph, we stack a few....
+As we mentioned in the previous paragraph, we stack a few pricing tasks
+ together so that the agent gets a reward from the portfolio that recently
+ terminates.
+ For a 
+\begin_inset Formula $T$
+\end_inset
+
+-term option, we combine 
+\begin_inset Formula $T$
+\end_inset
+
+ tasks together where the agent is required to learn to price not only the
+ 
+\begin_inset Formula $T$
+\end_inset
+
+-term one but all 
+\begin_inset Formula $t$
+\end_inset
+
+-term ones for 
+\begin_inset Formula $t<T$
+\end_inset
+
+.
  We briefly illustrate the stucture of RLOP in Fig.
  
 \begin_inset CommandInset ref
@@ -1784,7 +1961,7 @@ status collapsed
 \begin_inset Caption Standard
 
 \begin_layout Plain Layout
-A brief illustration on the modified RLOP environment.
+A brief illustration on the RLOP environment.
 \end_layout
 
 \end_inset
@@ -1821,19 +1998,46 @@ Environment
 \end_layout
 
 \begin_layout Standard
-...
+As in the QLBS model, the environment samples a family of asset price trajectori
+es and maintains the portfolio value process.
+ The asset value is assumed to obey the geometrical brownian motion, as
+ in Sec.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Environment"
+
+\end_inset
+
+.
+ We also allows the environment parameters to change at the beginning of
+ each episode according to a Poisson process with intensity 
+\begin_inset Formula $\varUpsilon$
+\end_inset
+
+.
 \end_layout
 
 \begin_layout Subsubsection
-Agent Parametrization
+Agent Parametrization and Learning Algorithm
 \end_layout
 
 \begin_layout Standard
-...
-\end_layout
+The agent, i.e.
+ the hedging strategy is parametrized by a Resnet-motivated structure, same
+ in Sec.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Agent-Parametrization"
 
-\begin_layout Subsubsection
-Learning Algorithm
+\end_inset
+
+.
+ The REINFORCE algorithm is adopted to train the agent.
+ One caveat is that there is no need to use a baseline as in the QLBS model,
+ since in this case the reward function is for penalty rather than learning
+ the optimal price.
 \end_layout
 
 \begin_layout Subsection
@@ -2081,7 +2285,7 @@ reference "fig:rlop-exp2"
 \begin_inset Float figure
 wide false
 sideways false
-status open
+status collapsed
 
 \begin_layout Plain Layout
 \begin_inset Graphics
@@ -2125,71 +2329,80 @@ Conclusion and Discussion
 \end_layout
 
 \begin_layout Standard
-Based on the aforementioned settings proposed by QLBS 
-\begin_inset CommandInset citation
-LatexCommand cite
-key "halperin2020qlbs"
-literal "false"
-
-\end_inset
-
-, we seek to build a method where the RL agent can learn an optimal hedging
- strategy in a realistic setting.
- (We need to point out that QLBS is not an interactive RL model since the
- optimal hedging strategy 
-\begin_inset Formula $\pi^{*}$
-\end_inset
-
- is solved in a closed form rather than learning from the reward feedback).
- The initial plan is as follows:
+We
 \end_layout
 
-\begin_layout Enumerate
-Understand the financial background as well as finalize the mathematical
- standing point.
+\begin_layout Itemize
+Build two environments from a mathematics perspective which enables RL methods
+ in option pricing through replicating portfolio
 \end_layout
 
-\begin_layout Enumerate
-Implement a hedging environment as well as collect data for training purposes.
+\begin_layout Itemize
+Implement the environment specifications, the learning algorithm, and agent
+ parametrization by neural network
 \end_layout
 
-\begin_layout Enumerate
-Implement the RLOP algorithm and benchmark with other baseline solutions.
-\end_layout
-
-\begin_layout Enumerate
-Investigate how the exterior parameters (such as interest rate, transaction
- cost) might play a role in the pricing strategy.
- 
+\begin_layout Itemize
+Compare the learnt optimal hedging against the BS predictions and study
+ how the factors affect the optimal price and position
 \end_layout
 
 \begin_layout Standard
-The learning algorithm we plan to use are MC methods and TD (or TD
-\begin_inset Formula $\left(\lambda\right)$
-\end_inset
-
-) methods.
- The baseline we wish to compare against are the L-S model 
-\begin_inset CommandInset citation
-LatexCommand cite
-key "longstaff2001valuing"
-literal "false"
-
-\end_inset
-
- and the QLBS method 
-\begin_inset CommandInset citation
-LatexCommand cite
-key "halperin2020qlbs"
-literal "false"
-
-\end_inset
-
-.
- We wish to further investigate which model best summaries the market behavior
- if allowed within the timeframe.
+future directions
 \end_layout
 
+\begin_layout Itemize
+financial fundamental
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+european option; american or even swing option?
+\end_layout
+
+\begin_layout Itemize
+better and finer tc model?
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+mathematics possibility
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+how does discrete time interplay? from stochastic integration
+\end_layout
+
+\begin_layout Itemize
+modified qlbs no longer temporal translation invariant
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+from a sampling/algorithm efficiency
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+qlbs conditional expectation is expensive
+\end_layout
+
+\begin_layout Itemize
+reinforce+baseline->actor-critic better?
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+conclusion wise
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+qualitative conclusion correct?
+\end_layout
+
+\end_deeper
 \begin_layout Standard
 \begin_inset Note Comment
 status collapsed
