@@ -111,7 +111,7 @@ Ziheng Chen
 status open
 
 \begin_layout Plain Layout
-email: 
+eid: zc5282, email: 
 \begin_inset CommandInset href
 LatexCommand href
 name "stokes615@utexas.edu"
@@ -126,6 +126,10 @@ literal "true"
 
 We thank Zhou Fang for his initial motivation and helpful discussion on
  the financial aspects.
+\begin_inset Newline newline
+\end_inset
+
+A 5-minute introduction can be found at:
 \end_layout
 
 \end_inset
@@ -138,9 +142,9 @@ In this work, we build two environments, namely the modified QLBS and RLOP
  models, from a mathematics perspective which enables RL methods in option
  pricing through replicating by portfolio.
  We implement the environment specifications, the learning algorithm, and
- agent parametrization by neural network.
- The learnt optimal hedging strategy is compared against the BS prediction.
- The effect of various factors are consdered and studied based on how they
+ agent parametrization by a neural network.
+ The learned optimal hedging strategy is compared against the BS prediction.
+ The effect of various factors is considered and studied based on how they
  affect the optimal price and position.
 \end_layout
 
@@ -152,8 +156,8 @@ Introduction and Background
 Option pricing is one of the central and open questions in the mathematical
  finance field.
  It motivates the advancement of the stochastic process theory and becomes
- one of the pratical applications of the sophisticated theories.
- To begin with, option is a type of derivative that gives the holder the
+ one of the practical applications of sophisticated theories.
+ To begin with, options are a type of derivative that gives the holder the
  right, but not the obligation, to buy or sell the underlying asset at a
  specified price (a.k.a.
  the strike price) within a specific period.
@@ -164,18 +168,18 @@ Option pricing is one of the central and open questions in the mathematical
  a fixed amount of payment in the future.
  This helps to control volatility and uncertainty.
  Thus, the market maker who sells the option charges the buyer a certain
- amount of fee that amounts the expected risk.
+ amount of fee that amounts to the expected risk.
 \end_layout
 
 \begin_layout Standard
 We focus on the European call in this paper.
- One can only exercise a european option at the terminal time and a call
+ One can only exercise a European option at the terminal time and a call
  option gives the holder the right to buy.
- The holder usually exercises the european call if the asset price ends
+ The holder usually exercises the European call if the asset price ends
  up above the strike price and takes no action otherwise.
  If the market is liquid enough, the holder can sell the asset immediately
- after obtaining it, making the marginally profit.
- Therefore, we define the payoff of a european call as
+ after obtaining it, making a marginal profit.
+ Therefore, we define the payoff of a European call as
 \begin_inset Formula 
 \begin{equation}
 \text{payoff}=\max\left\{ S-K,0\right\} \label{eq:intro-payoff}
@@ -194,9 +198,8 @@ where
  stands for the strike price.
  Although it is tempting to price the option based on this payoff function
  with consideration of each path probability, this is usually not the best
- way since the option is designed to measure the risk of obtaining such
- asset.
- If there is a general trend of the price process, one can hold a consistent
+ way since the option is designed to measure the risk of obtaining the asset.
+ If there is a general trend in the price process, one can hold a consistent
  position in the asset and purchase an option in addition.
  Thus, the more popular approach is to manage a portfolio that replicates
  the option, i.e.
@@ -228,11 +231,76 @@ Black-Scholes Model
 \end_layout
 
 \begin_layout Standard
-Black-Scholes formula (B-S formula) is the first formula that tells people
- how to price European-style call options.
- The idea behind the B-S formula is that one can hedge a short position
- of call options of a certain stock by holding that stock and putting extra
- money at the bank to earn interest; see 
+The Black-Scholes formula (or BS formula or short) is the first formula
+ that prices the European-style call option.
+ There are two equivalent ways of calculating the price, either by solving
+ the Black-Scholes-Merton equation or use the risk-neutral measure.
+ The price of an European call of time span 
+\begin_inset Formula $T$
+\end_inset
+
+ and a strike price 
+\begin_inset Formula $K$
+\end_inset
+
+ is solved by 
+\begin_inset Formula 
+\begin{equation}
+c_{\text{BS}}\left(t,x\right)=xN\left(d_{+}\left(T-t,x\right)\right)-Ke^{-r\left(T-t\right)}N\left(d_{-}\left(T-t,x\right)\right)\label{eq:bs-price}
+\end{equation}
+
+\end_inset
+
+where 
+\begin_inset Formula $0\le t<T$
+\end_inset
+
+ is the current time and 
+\begin_inset Formula $x$
+\end_inset
+
+ is the current asset price, with 
+\begin_inset Formula $r$
+\end_inset
+
+ being the risk-free interest rate, 
+\begin_inset Formula $\sigma$
+\end_inset
+
+ being the volatility, 
+\begin_inset Formula $N\left(y\right):=\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{y}\exp\left(-\frac{z^{2}}{2}\right)\d z$
+\end_inset
+
+ being the cumulative standard normal distribution, and 
+\begin_inset Formula $d_{\pm}$
+\end_inset
+
+ defined as
+\begin_inset Formula 
+\[
+d_{\pm}\left(\tau,x\right):=\frac{1}{\sigma\sqrt{\tau}}\left[\log\frac{x}{K}+\left(r\pm\frac{\sigma^{2}}{2}\right)\tau\right].
+\]
+
+\end_inset
+
+The optimal hedging position can be derived as the partial derivative of
+ Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:bs-price"
+
+\end_inset
+
+ as 
+\begin_inset Formula 
+\begin{equation}
+u_{\text{BS}}\left(t,x\right)=N\left(d_{+}\left(T-t,x\right)\right).\label{eq:bs-hedge}
+\end{equation}
+
+\end_inset
+
+We leave the details to 
 \begin_inset CommandInset citation
 LatexCommand cite
 key "shreve2004stochastic,alma991057973644906011"
@@ -241,28 +309,20 @@ literal "false"
 \end_inset
 
  for more in-depth theory and computation.
- The problem with the B-S formula is people need to hedge short positions
- continuously, which means they should sell or buy stock, and put or borrow
- money from the bank at every moment.
- This is unrealistic, and costly for almost all investors.
- Most importantly, the prices given by the B-S formula differ greatly from
- than prices of options in real life.
- In addition, a sub-optimal hedging position at the current period will
- affect the cash and stock position in the next period.
- The accumulation of those errors will affect the final price profoundly.
+ 
 \end_layout
 
 \begin_layout Standard
-\begin_inset Marginal
-status open
-
-\begin_layout Plain Layout
-[How discrete time can add another extra offset to the model]
-\end_layout
-
-\end_inset
-
-
+This set of theory surpassed most of the option pricing theories when it
+ was first published and is still helpful from since.
+ With that being said, the theory relies on a critical assumption that the
+ agent is able to continuously rehedge the positions of the replication
+ portfolio.
+ This is either impractical or costly to most of the investing parties.
+ In the view of stochastic integration, we use a Riemann-style sum with
+ left endpoints to approximate the Ito integral.
+ The accumulation of the temporal discretization errors will affect the
+ final payoff profoundly.
 \end_layout
 
 \begin_layout Subsection
@@ -801,9 +861,9 @@ reference "eq:qlbs-value-function"
 , but it is rather difficult in practice to figure out this situation.
  Thus, we propose the modified value function 
 \begin_inset Formula 
-\[
-V_{t}^{\pi}\left(X_{t}\right)=\bE_{t}^{\pi}\left[-\left(1-\frac{t}{T}\right)\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}\gamma^{\tau-t}\sqrt{\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)\right]}\right].
-\]
+\begin{equation}
+V_{t}^{\pi}\left(X_{t}\right)=\bE_{t}^{\pi}\left[-\left(1-\frac{t}{T}\right)\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}\gamma^{\tau-t}\sqrt{\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)\right]}\right].\label{eq:qlbs-modified-V}
+\end{equation}
 
 \end_inset
 
@@ -1622,7 +1682,7 @@ reference "fig:qlbs-exp3"
 
  does lead to a higher price learned (shown in the left half) and the hedge
  position is usually always higher (in the right half).
- [Some rationale from financial point of view]
+ 
 \end_layout
 
 \begin_layout Standard
@@ -1994,7 +2054,7 @@ reference "fig:rlop-illustration"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \align center
@@ -2229,7 +2289,14 @@ status open
 
 \begin_layout Plain Layout
 Optimal hedge position learnt compared with BS predictions (Eqn.
- ?).
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:bs-hedge"
+
+\end_inset
+
+).
 \end_layout
 
 \end_inset
@@ -2379,84 +2446,126 @@ Conclusion and Discussion
 \end_layout
 
 \begin_layout Standard
-We
+In this project, we construct the modified QLBS and RLOP as two mathematically
+ sound environments that enable RL methods in the field of option pricing.
+ We specify the environment details as well as how the agent is parametrized
+ and trained; the source code can be found at the repo
+\begin_inset Foot
+status open
+
+\begin_layout Plain Layout
+\begin_inset CommandInset href
+LatexCommand href
+target "https://github.com/owen8877/RLOP"
+literal "true"
+
+\end_inset
+
+
 \end_layout
 
-\begin_layout Itemize
-Build two environments from a mathematics perspective which enables RL methods
- in option pricing through replicating portfolio
-\end_layout
+\end_inset
 
-\begin_layout Itemize
-Implement the environment specifications, the learning algorithm, and agent
- parametrization by neural network
-\end_layout
-
-\begin_layout Itemize
-Compare the learnt optimal hedging against the BS predictions and study
- how the factors affect the optimal price and position
+.
+ We provide a few numerical experiments which compare the learned optimal
+ hedging against the BS predictions.
+ We also study how the factors affect the optimal price and position.
+ We hope that this work can inspire and motivate more research into the
+ cross-discipline study between finance and machine learning.
 \end_layout
 
 \begin_layout Standard
-future directions
+We would like to discuss a few possible future directions, starting from
+ the financial aspects.
+ We focus on European call options in this report, but in general, it shall
+ also apply to the put option or other options that can only exercise at
+ the terminal time.
+ It is not clear whether the QLBS or RLOP model can generalize to the American
+ or even swing options that are useful in electricity trading.
+ Besides, the transaction cost model proposed in Sec.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "subsec:Trading-Cost"
+plural "false"
+caps "false"
+noprefix "false"
+
+\end_inset
+
+ can be greatly improved to allow fine models on the order density, or even
+ influence on the mid price.
 \end_layout
 
-\begin_layout Itemize
-financial fundamental
+\begin_layout Standard
+There are also a few open questions on the mathematics side.
+ It could be beneficial to analyze the theoretical optimal hedging strategy
+ in the discrete time model.
+ We have provided an analogous to the stochastic integral in the earlier
+ sections, which might help in analyzing the temporal discretization error.
+ Besides, the modified QLBS reward function (Eqn.
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:qlbs-modified-V"
+
+\end_inset
+
+) is no longer time translational invariant, so one has to train a new model
+ if the maturity time of the option changes.
+ It would be a great improvement if one finds an equivalent or a similar
+ formulation where the value function is translational invariant while giving
+ homogeneous rewards over time.
 \end_layout
 
-\begin_deeper
-\begin_layout Itemize
-european option; american or even swing option?
+\begin_layout Standard
+We also have a few comments on the learning/sampling algorithms.
+ One common drawback of the two methods is that the computational complexity
+ scales quadratically as the maturity time 
+\begin_inset Formula $T$
+\end_inset
+
+.
+ The modified QLBS model requires computing a conditional expectation at
+ each time step, which is not of constant cost.
+ The RLOP model stacks 
+\begin_inset Formula $T$
+\end_inset
+
+ pricing tasks together, each lasting one more period than the previous
+ one, leading to a quadratic cumulative cost.
+ Another issue is that we use REINFORCE with baseline as the learning algorithm,
+ which can be replaced by the actor-critic (or even the soft version) to
+ improve performance.
+ More time is appreciated since we have limited time in the project to try
+ different possibilities.
 \end_layout
 
-\begin_layout Itemize
-better and finer tc model?
+\begin_layout Standard
+There are controversial conclusions as far as what the numerical experiments
+ show.
+ In general, the agents learn to price a higher price if the current price
+ 
+\begin_inset Formula $S_{t}$
+\end_inset
+
+ is higher, or the risk aversion parameter 
+\begin_inset Formula $\lambda$
+\end_inset
+
+ (or the friction parameter 
+\begin_inset Formula $\epsilon$
+\end_inset
+
+) is larger.
+ However, the two models predict the optimal hedging strategy differently,
+ especially when large friction is anticipated.
+ The modified QLBS agent prefers to hedge more than the frictionless case
+ while the RLOP agent inclines to hedge less.
+ This discrepancy might be the key to understanding the difference between
+ these two models and eventually the option pricing problem.
 \end_layout
 
-\end_deeper
-\begin_layout Itemize
-mathematics possibility
-\end_layout
-
-\begin_deeper
-\begin_layout Itemize
-how does discrete time interplay? from stochastic integration
-\end_layout
-
-\begin_layout Itemize
-modified qlbs no longer temporal translation invariant
-\end_layout
-
-\end_deeper
-\begin_layout Itemize
-from a sampling/algorithm efficiency
-\end_layout
-
-\begin_deeper
-\begin_layout Itemize
-qlbs conditional expectation is expensive
-\end_layout
-
-\begin_layout Itemize
-reinforce+baseline->actor-critic better?
-\end_layout
-
-\end_deeper
-\begin_layout Itemize
-conclusion wise
-\end_layout
-
-\begin_deeper
-\begin_layout Itemize
-qualitative conclusion correct?
-\end_layout
-
-\begin_layout Itemize
-transaction fee => hedge more or less?
-\end_layout
-
-\end_deeper
 \begin_layout Standard
 \begin_inset Note Comment
 status collapsed
