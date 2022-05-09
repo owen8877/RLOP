@@ -7,7 +7,6 @@ import numpy as np
 import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
-from pandas import DataFrame, Series
 
 import util
 from rlop.bs import BSInitialEstimator, BSPolicy

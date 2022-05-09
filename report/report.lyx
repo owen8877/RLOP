@@ -514,7 +514,7 @@ literal "false"
 \end_inset
 
 .
- The option is realized as a hedge portfolio which consists of some holdings
+ The option is realized as a hedge portfolio which consists of some shares
  
 \begin_inset Formula $u_{t}$
 \end_inset
@@ -679,18 +679,18 @@ where
 \end_layout
 
 \begin_layout Subsection
-QLBS as a RL Model
+Make QLBS Interactive
 \end_layout
 
 \begin_layout Standard
-Elegant as the vanilla QLBS approach, it is not a truly RL problem since
+Elegant as the vanilla QLBS approach, it is not a true RL problem since
  the optimal policy 
 \begin_inset Formula $\pi^{*}$
 \end_inset
 
  is solved analytically without any reinforcement learning techniques.
  In fact, the author derives the Bellman's equation for the optimal Q-function
- from Eq.
+ from Eqn.
  
 \begin_inset CommandInset ref
 LatexCommand ref
@@ -776,7 +776,9 @@ works well with value-based or policy-based learning algorithms.
 
 \begin_layout Standard
 We start by modifying the value function.
- The version introduced in Eqn.
+ A first problem lies in the fact that the reward are not homogeneous over
+ time.
+ Eqn.
  
 \begin_inset CommandInset ref
 LatexCommand ref
@@ -784,9 +786,9 @@ reference "eq:qlbs-value-function"
 
 \end_inset
 
- has the problem that it assigns the (negative) cashflow with a risk part
- as the reward, but the terminal step gets the option payoff which is in
- general much larger than the previous steps.
+ assigns the (negative) cashflow with a risk part as the reward, but the
+ terminal step gets the option payoff which is in general much larger than
+ the previous steps.
  Technically speaking, an agent could notice this heterogenity since the
  time 
 \begin_inset Formula $t$
@@ -798,16 +800,6 @@ reference "eq:qlbs-value-function"
 
 , but it is rather difficult in practice to figure out this situation.
  Thus, we propose the modified value function 
-\begin_inset Marginal
-status open
-
-\begin_layout Plain Layout
-illustration
-\end_layout
-
-\end_inset
-
-
 \begin_inset Formula 
 \[
 V_{t}^{\pi}\left(X_{t}\right)=\bE_{t}^{\pi}\left[-\left(1-\frac{t}{T}\right)\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}\gamma^{\tau-t}\sqrt{\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)\right]}\right].
@@ -1239,7 +1231,12 @@ literal "false"
 In our implementation, the policy network and the value network have the
  same latent dimension 10 and they are composed of two Resnet blocks with
  two hidden affine transforms.
- We use the Adam optimizers to update the networks, one for each.
+ We use the Adam optimizers to update the networks, one for each, and the
+ learning rate is set to 
+\begin_inset Formula $10^{-4}$
+\end_inset
+
+ by default.
 \end_layout
 
 \begin_layout Subsection
@@ -1348,7 +1345,7 @@ status open
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \begin_inset Graphics
@@ -1402,7 +1399,7 @@ name "fig:qlbs-exp1-learning"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \begin_inset Graphics
@@ -1542,7 +1539,7 @@ reference "fig:qlbs-exp2"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \align center
@@ -1632,7 +1629,7 @@ reference "fig:qlbs-exp3"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \align center
@@ -1724,7 +1721,7 @@ reference "fig:qlbs-exp4"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \align center
@@ -2160,13 +2157,13 @@ We also compare the optimal hedging strategy learnt with the BS predictions.
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \begin_inset Graphics
@@ -2338,7 +2335,7 @@ reference "fig:rlop-exp2"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \begin_inset Graphics
@@ -2453,6 +2450,10 @@ conclusion wise
 \begin_deeper
 \begin_layout Itemize
 qualitative conclusion correct?
+\end_layout
+
+\begin_layout Itemize
+transaction fee => hedge more or less?
 \end_layout
 
 \end_deeper

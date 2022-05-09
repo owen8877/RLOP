@@ -1,15 +1,14 @@
 import os
 import pickle
 from unittest import TestCase
+
 import matplotlib as mpl
 import numpy as np
 import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
-from pandas import DataFrame, Series
 
 import util
-from qlbs.bs import BSPolicy, BSBaseline
 from qlbs.env import QLBSEnv
 from qlbs.rl import GaussianPolicy, NNBaseline, policy_gradient
 
@@ -92,9 +91,9 @@ class Experiment4(TestCase):
             use_high = np.isclose(env.info.r, high_param[0])
             if np.random.rand(1)[0] < mutation_lambda:
                 r = np.random.rand(1)[0]
-                if r < 1/3:
+                if r < 1 / 3:
                     param = low_param
-                elif r < 2/3:
+                elif r < 2 / 3:
                     param = high_param
                 else:
                     param = avg_param

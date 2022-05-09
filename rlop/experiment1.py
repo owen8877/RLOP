@@ -46,7 +46,7 @@ class Experiment1(TestCase):
         max_step, mutation_lambdas = self._parameters()
         reuse_training = True
 
-        for mutation_lambda in [1e-2]:  # mutation_lambdas:
+        for mutation_lambda in mutation_lambdas:
             mutate_status = []
 
             def mutate(env: RLOPEnv):
@@ -66,8 +66,8 @@ class Experiment1(TestCase):
 
             collector = policy_gradient_for_stacked(env, nn_policy, batch=True, plot=True, episode_n=10000)
             nn_policy.save(f'{path}/policy.pt')
-            # with open(f'{path}/additional.pickle', 'wb') as f:
-            # pickle.dump({'mutate_status': mutate_status, 'collector': collector}, f)
+            with open(f'{path}/additional.pickle', 'wb') as f:
+                pickle.dump({'mutate_status': mutate_status, 'collector': collector}, f)
 
     def test_draw_plot(self):
         r, mu, sigma, initial_price, strike_price, T, _dt, friction, is_call_option, simplified, \

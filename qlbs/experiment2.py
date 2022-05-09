@@ -1,17 +1,17 @@
 import os
 import pickle
 from unittest import TestCase
+
 import matplotlib as mpl
 import numpy as np
 import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
-from pandas import DataFrame, Series
 
 import util
 from qlbs.bs import BSPolicy, BSBaseline
 from qlbs.env import QLBSEnv
-from qlbs.rl import GaussianPolicy, NNBaseline, policy_gradient
+from qlbs.rl import NNBaseline, policy_gradient
 
 mpl.use('TkAgg')
 sns.set_style('whitegrid')
@@ -114,7 +114,7 @@ class Experiment2(TestCase):
         palette = sns.color_palette()
         plt.plot(initial_prices, bs_price, label='BS', c=palette[-1], ls=':')
         for i, risk_lambda in enumerate(risk_lambdas):
-            plt.plot(initial_prices, -bs_policy_prices[risk_lambda], c=palette[i], ls = '--',
+            plt.plot(initial_prices, -bs_policy_prices[risk_lambda], c=palette[i], ls='--',
                      label=rf'BS policy ($\lambda$={risk_lambda:d})')
             plt.plot(initial_prices, -nn_prices[risk_lambda], c=palette[i],
                      label=rf'NN policy ($\lambda$={risk_lambda:d})')

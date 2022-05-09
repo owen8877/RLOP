@@ -1,6 +1,7 @@
 import os
 import pickle
 from unittest import TestCase
+
 import matplotlib as mpl
 import numpy as np
 import seaborn as sns
@@ -8,7 +9,6 @@ from matplotlib import pyplot as plt
 from pandas import DataFrame, Series
 
 import util
-from qlbs.bs import BSPolicy, BSBaseline
 from qlbs.env import QLBSEnv
 from qlbs.rl import GaussianPolicy, NNBaseline, policy_gradient
 

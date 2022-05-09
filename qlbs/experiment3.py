@@ -1,12 +1,12 @@
 import os
 import pickle
 from unittest import TestCase
+
 import matplotlib as mpl
 import numpy as np
 import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
-from pandas import DataFrame, Series
 
 import util
 from qlbs.bs import BSPolicy, BSBaseline
