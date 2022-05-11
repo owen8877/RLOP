@@ -5,6 +5,9 @@
 \save_transient_properties true
 \origin unavailable
 \textclass article
+\begin_preamble
+\usepackage{comment}
+\end_preamble
 \use_default_options true
 \maintain_unincluded_children false
 \language english
@@ -111,25 +114,16 @@ Ziheng Chen
 status open
 
 \begin_layout Plain Layout
-eid: zc5282, email: 
+email: 
 \begin_inset CommandInset href
 LatexCommand href
-name "stokes615@utexas.edu"
-type "mailto:"
+name "ziheng.chen@math.utexas.edu"
+target "ziheng.chen@math.utexas.edu"
 literal "true"
 
 \end_inset
 
 
-\begin_inset Newline newline
-\end_inset
-
-We thank Zhou Fang for his initial motivation and helpful discussion on
- the financial aspects.
-\begin_inset Newline newline
-\end_inset
-
-A 5-minute introduction can be found at:
 \end_layout
 
 \end_inset
@@ -141,11 +135,39 @@ A 5-minute introduction can be found at:
 In this work, we build two environments, namely the modified QLBS and RLOP
  models, from a mathematics perspective which enables RL methods in option
  pricing through replicating by portfolio.
- We implement the environment specifications, the learning algorithm, and
- agent parametrization by a neural network.
+ We implement the environment specifications 
+\begin_inset Foot
+status open
+
+\begin_layout Plain Layout
+the source code can be found at 
+\begin_inset CommandInset href
+LatexCommand href
+target "https://github.com/owen8877/RLOP"
+literal "true"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+, the learning algorithm, and agent parametrization by a neural network.
  The learned optimal hedging strategy is compared against the BS prediction.
  The effect of various factors is considered and studied based on how they
  affect the optimal price and position.
+\begin_inset Foot
+status collapsed
+
+\begin_layout Plain Layout
+We thank Zhou Fang for his initial motivation and helpful discussion on
+ the financial aspects.
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Section
@@ -957,12 +979,12 @@ reference "fig:qlbs-illustration"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \align center
 \begin_inset Graphics
-	filename qlbs illustration.png
+	filename qlbs-illustration.png
 	width 60line%
 
 \end_inset
@@ -1220,12 +1242,12 @@ reference "fig:qlbs-resnet"
 \begin_inset Float figure
 wide false
 sideways false
-status collapsed
+status open
 
 \begin_layout Plain Layout
 \align center
 \begin_inset Graphics
-	filename resnet illustration.png
+	filename resnet-illustration.png
 	width 80line%
 
 \end_inset
@@ -2059,7 +2081,7 @@ status open
 \begin_layout Plain Layout
 \align center
 \begin_inset Graphics
-	filename rlop illustration.png
+	filename rlop-illustration.png
 	width 60line%
 
 \end_inset
@@ -2449,24 +2471,7 @@ Conclusion and Discussion
 In this project, we construct the modified QLBS and RLOP as two mathematically
  sound environments that enable RL methods in the field of option pricing.
  We specify the environment details as well as how the agent is parametrized
- and trained; the source code can be found at the repo
-\begin_inset Foot
-status open
-
-\begin_layout Plain Layout
-\begin_inset CommandInset href
-LatexCommand href
-target "https://github.com/owen8877/RLOP"
-literal "true"
-
-\end_inset
-
-
-\end_layout
-
-\end_inset
-
-.
+ and trained.
  We provide a few numerical experiments which compare the learned optimal
  hedging against the BS predictions.
  We also study how the factors affect the optimal price and position.
