@@ -18,7 +18,18 @@
                 "ms-python.vscode-pylance",
                 "charliermarsh.ruff",
                 "ms-toolsai.jupyter"
-            ]
+            ],
+            "settings": {
+                "python.testing.unittestArgs": [
+                    "-v",
+                    "-s",
+                    ".",
+                    "-p",
+                    "experiment*.py"
+                ],
+                "python.testing.pytestEnabled": false,
+                "python.testing.unittestEnabled": true
+            }
         }
     },
     "postCreateCommand": "conda install matplotlib numpy pandas jupyter gymnasium scipy tensorboard seaborn -y"

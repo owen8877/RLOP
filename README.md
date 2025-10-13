@@ -1,6 +1,11 @@
+# Getting started
+```
+uv sync
+```
+then you should be able to find a test under lib2/test_hello_world.py (in vscode it is "Explorer: Focus on Test Explorer View" command)
+
 # Misc
 - tensor board: `tensorboard --logdir=playground/runs`
-
 
 # How to run experiments
 
