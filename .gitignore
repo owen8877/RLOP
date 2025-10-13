@@ -5,7 +5,10 @@ sync*
 
 *~
 *.pdf
-trained_model/
+trained_model
 __pycache__
 *-export/
 *.gz
+*.local.json
+.ipynb_checkpoints
+runs

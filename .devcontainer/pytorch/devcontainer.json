@@ -1,0 +1,25 @@
+{
+    "name": "pytorch",
+    "image": "pytorch/pytorch:2.8.0-cuda12.6-cudnn9-runtime",
+    "runArgs": [
+        "--gpus",
+        "all"
+    ],
+    "remoteUser": "root",
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {},
+        "ghcr.io/devcontainers/features/conda": {},
+        "ghcr.io/devcontainers/features/git-lfs": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff",
+                "ms-toolsai.jupyter"
+            ]
+        }
+    },
+    "postCreateCommand": "conda install matplotlib numpy pandas jupyter gymnasium scipy tensorboard seaborn -y"
+}

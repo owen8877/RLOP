@@ -1,3 +1,7 @@
+# Misc
+- tensor board: `tensorboard --logdir=playground/runs`
+
+
 # How to run experiments
 
 - Install the environment by `conda env create -n [NAME] --file env.yml`

@@ -3,6 +3,8 @@
 SOURCE=report
 TARGET=rlop
 ID=arxiv-export
+#LYX=lyx
+LYX="C:\Program Files\LyX 2.4\bin\lyx.exe"
 if [ -z $1 ]; then
     start_stage=1
 else
@@ -14,7 +16,7 @@ stage1() {
 	[ -d $ID ] && rm -r $ID
     mkdir $ID
 	[ -d $ID ] || (echo "Cannot find $ID directory"; exit 1) && cd $ID
-	lyx -E latex $TARGET.tex ../../$SOURCE.lyx
+	"$LYX" -E latex $TARGET.tex "../../$SOURCE.lyx"
 }
 
 stage2() {
