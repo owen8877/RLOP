@@ -2,18 +2,22 @@ import pickle
 from pathlib import Path
 
 import numpy as np
-import torch
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from typing import Union
 
-from torch.utils.tensorboard import SummaryWriter
+# Optional import of torch so the module can be imported even if torch is not installed.
+try:
+    import torch
+except Exception:
+    torch = None
 
 
 def _prefix(simplified: bool, plan: str):
     return ("simplified_" if simplified else "") + plan
 
 
-Arrayable = float | np.ndarray | torch.Tensor
+Arrayable = Union[float, np.ndarray, "torch.Tensor"]  # type: ignore
 
 
 def standard_to_normalized_price(standard_price: Arrayable, mu: float, sigma: float, time: Arrayable, _dt: float):
@@ -60,7 +64,7 @@ class EMACollector:
             emas.append(ema)
             emsqs.append(emsq)
 
-    def write(self, writer: SummaryWriter):
+    def write(self, writer: "torch.utils.tensorboard.SummaryWriter"):  # type: ignore
         for (key, emas), emsqs in zip(self.ema_dict.items(), self.emsq_dict.values()):
             emas = np.array(emas)
             emsqs = np.array(emsqs)
@@ -84,4 +88,4 @@ def abs(arr):
     if isinstance(arr, np.ndarray):
         return np.abs(arr)
     else:
-        return torch.abs(arr)
+        return torch.abs(arr)  # type: ignore

@@ -1,4 +1,5 @@
-from typing import Tuple, Callable, Union
+from dataclasses import dataclass
+from typing import Callable, Tuple, Union
 
 import gymnasium as gym
 import numpy as np
@@ -9,24 +10,24 @@ import lib.util
 from lib.util.sample import geometricBM
 
 
+@dataclass
 class Info:
-    def __init__(
-        self,
-        strike_price: float,
-        r: float,
-        mu: float,
-        sigma: float,
-        risk_lambda: float,
-        _dt: float,
-        friction: float,
-    ):
-        self.strike_price = strike_price
-        self.r = r
-        self.mu = mu
-        self.sigma = sigma
-        self.risk_lambda = risk_lambda
-        self._dt = _dt
-        self.friction = friction
+    strike_price: float
+    r: float
+    mu: float
+    sigma: float
+    risk_lambda: float
+    _dt: float
+    friction: float
+
+    def _assert_valid(self):
+        assert self.strike_price > 0
+        assert self.r >= 0
+        assert self.sigma > 0
+        assert self._dt > 0
+        assert self.friction >= 0
+        assert self.mu is not None
+        assert self.risk_lambda >= 0
 
 
 class State:
@@ -46,7 +47,7 @@ class State:
                     info.mu,
                     info.sigma,
                     (self.passed_step + self.remaining_step),
-                    1,
+                    info._dt,
                 ),
                 info.r,
                 info.mu,
@@ -102,39 +103,39 @@ class Baseline:
         raise NotImplementedError
 
 
+@dataclass
+class EnvSetup(Info):
+    is_call_option: bool
+    max_step: int
+    initial_asset_price: float
+    risk_simulation_paths: int
+    mutation: Union[float, Callable] = 0.1
+
+    def _assert_valid(self):
+        super()._assert_valid()
+        assert self.risk_simulation_paths >= 1
+        assert self.max_step >= 1
+        assert self.initial_asset_price > 0
+
+
 class QLBSEnv(gym.Env):
-    def __init__(
-        self,
-        is_call_option: bool,
-        strike_price: float,
-        max_step: int,
-        mu: float,
-        sigma: float,
-        r: float,
-        risk_lambda: float,
-        friction: float,
-        initial_asset_price: float,
-        risk_simulation_paths: int,
-        *,
-        mutation: Union[float, Callable] = 0.1,
-        _dt: float = 1.0,
-    ):
+    def __init__(self, setup: EnvSetup):
         # Setting of the system; stays constant for a long time
-        self.is_call_option = is_call_option
+        self.is_call_option = setup.is_call_option
         self.info = Info(
-            strike_price=strike_price,
-            r=r,
-            mu=mu,
-            sigma=sigma,
-            risk_lambda=risk_lambda,
-            _dt=_dt,
-            friction=friction,
+            strike_price=setup.strike_price,
+            r=setup.r,
+            mu=setup.mu,
+            sigma=setup.sigma,
+            risk_lambda=setup.risk_lambda,
+            _dt=setup._dt,
+            friction=setup.friction,
         )
-        self.gamma = np.exp(-r * _dt)
-        self.max_step = max_step
-        self.initial_asset_price = initial_asset_price
-        self.mutation = mutation
-        self.risk_simulation_paths = risk_simulation_paths
+        self.gamma = np.exp(-self.info.r * self.info._dt)
+        self.max_step = setup.max_step
+        self.initial_asset_price = setup.initial_asset_price
+        self.mutation = setup.mutation
+        self.risk_simulation_paths = setup.risk_simulation_paths
 
         # State variables
         self._normalized_price: np.ndarray | None = None
@@ -202,7 +203,13 @@ class QLBSEnv(gym.Env):
             sit[:, 7] = self.info.risk_lambda  # risk_lambda
             sit[:, 8] = self.info.friction  # friction
             sits.append(sit)
-        hedge_long = pi.batch_action(torch.cat(sits, dim=0))
+
+        from .bs import BSPolicy
+
+        if isinstance(pi, BSPolicy):
+            hedge_long = pi.batch_action(torch.cat(sits, dim=0))
+        else:
+            hedge_long = pi.batch_action(torch.cat(sits, dim=0).cuda()).cpu().numpy()
         hedge = hedge_long.reshape(RS, self.max_step - t, order="F")
         hedge[:, 0] = action
 

@@ -97,7 +97,7 @@ class StrictResNet(nn.Module):
             for i, layer in enumerate(group):  # type: ignore
                 z = layer(z)
                 if i < len(group) - 1:  # type: ignore
-                    z = self.activation(layer(z))
+                    z = self.activation(z)
             z = self.activation(z_id + z)
         return self.fc(z)
 
@@ -114,7 +114,14 @@ TransformPair = tuple[Transform, Transform]
 
 class CombinedResNet(nn.Module):
     def __init__(
-        self, input_dim, hidden_dim, transform_pair: TransformPair, activation="elu", groups=2, layer_per_group=2
+        self,
+        input_dim,
+        hidden_dim,
+        transform_pair: TransformPair,
+        activation="elu",
+        output_dim=2,
+        groups=2,
+        layer_per_group=2,
     ):
         super(CombinedResNet, self).__init__()
         self.input_dim = input_dim
@@ -133,7 +140,7 @@ class CombinedResNet(nn.Module):
             ]
         )
 
-        self.fc = nn.Linear(hidden_dim, 2)
+        self.fc = nn.Linear(hidden_dim, output_dim)
         if activation == "relu":
             self.activation = Func.relu
         elif activation == "relu3":
@@ -153,9 +160,12 @@ class CombinedResNet(nn.Module):
             for i, layer in enumerate(group):  # type: ignore
                 z = layer(z)
                 if i < len(group) - 1:  # type: ignore
-                    z = self.activation(layer(z))
+                    z = self.activation(z)
             z = self.activation(z_id + z)
         y = self.fc(z)
+        if torch.any(torch.isnan(y)):
+            breakpoint()
+            raise ValueError("NaN encountered in CombinedResNet forward!")
         return self.out_transform(y)
 
     def dof(self) -> int:

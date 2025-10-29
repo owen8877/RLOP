@@ -31,10 +31,10 @@ class NetHolder:
             return x
 
         def out_transform(y: torch.Tensor) -> torch.Tensor:
-            # print(y)
             y[:, 0] = -torch.exp(y[:, 0])  # price
-            # y[:, 0] = -y[:, 0]  # price
-            y[:, 1] = torch.sigmoid(y[:, 1]) * 0.95 + 0.05  # delta
+            print(1, y[:, 1])
+            y[:, 1] = torch.sigmoid(y[:, 1])  # delta
+            print(2, y[:, 1])
             return y
 
         self.net = CombinedResNet(
@@ -69,9 +69,21 @@ class GaussianPolicy_v2(Policy):
         if from_filename is not None:
             self.load(from_filename)
 
+    def _latent_to_delta(self, x: T1) -> T1:
+        _sigmoid = torch.sigmoid if isinstance(x, torch.Tensor) else sp.special.expit
+        return (1 if self.is_call_option else -1) * _sigmoid(x)  # type: ignore
+
+    def _delta_to_latent(self, delta: T1, eps: float = 1e-3) -> T1:
+        _logit = torch.special.logit if isinstance(delta, torch.Tensor) else sp.special.logit
+        _cutoff = torch.clamp if isinstance(delta, torch.Tensor) else np.clip
+        return _logit(_cutoff((1 if self.is_call_option else -1) * delta, eps, 1 - eps))  # type: ignore
+
     def _gauss_param(self, tensor):
         tensor = tensor.float().cuda()
-        _mu = self.theta_mu_holder.net(tensor)[:, 1:]
+        _mu = self.theta_mu_holder.net(tensor)
+        print(3, _mu)
+        _mu = self._delta_to_latent(_mu[:, 1:2])
+        print(4, _mu)
 
         if torch.any(torch.isnan(_mu)):
             breakpoint()
@@ -80,15 +92,15 @@ class GaussianPolicy_v2(Policy):
 
         sigma_c = torch.sigmoid(sigma) * 0.3 + 0.03
 
-        # sigma_c = torch.ones_like(_mu) * 0.3
-
         return _mu, sigma_c
 
     def action(self, state, info):
         tensor = state.to_tensor(info)[None, :]
         with torch.no_grad():
             mu, sigma = self._gauss_param(tensor)
-            _r = float(np.random.randn(1)) * float(sigma) + float(mu)
+            print(5, mu, sigma)
+            _r = self._latent_to_delta(float(np.random.randn(1)) * float(sigma) + float(mu))
+            print(6, mu, sigma)
             return _r
 
     def update(self, delta, action, state, info):
@@ -96,9 +108,13 @@ class GaussianPolicy_v2(Policy):
 
         def loss_func():
             mu, sigma = self._gauss_param(tensor)
-            log_pi = -((action - mu) ** 2) / (2 * sigma**2) - torch.log(sigma)
+            _action, _mu = self._delta_to_latent(action), mu
+            print(_action, _mu, sigma, ((_action - _mu) ** 2) / (2 * sigma**2), torch.log(sigma))
+            log_pi = -((_action - _mu) ** 2) / (2 * sigma**2) - torch.log(sigma)
             loss = -delta * log_pi
             loss.backward()
+            print(delta, loss, log_pi)
+            raise
             return loss
 
         self.optimizer.zero_grad()
@@ -113,9 +129,9 @@ class GaussianPolicy_v2(Policy):
         with torch.no_grad():
             mu, sigma = self._gauss_param(state_info_tensor)
             if random:
-                return torch.randn(len(mu)).cuda() * sigma[:, 0] + mu[:, 0]  # .numpy()
+                return self._latent_to_delta((torch.randn(len(mu)).cuda() * sigma[:, 0] + mu[:, 0]))  # .numpy()
             else:
-                return mu[:, 0]  # .numpy()
+                return self._latent_to_delta(mu[:, 0])  # .numpy()
 
     def save(self, filename: str):
         lib.util.ensure_dir(filename, need_strip_end=True)
@@ -165,10 +181,10 @@ class NNBaseline_v2(Baseline):
         tensor = state.to_tensor(info)[None, :].cuda()
 
         def loss_func():
-            # _G = np.log(max(1e-6, -G))
+            _G = np.log(max(1e-6, -G))
             tensor1 = self._predict(tensor)
-            # _tensor1 = torch.log(torch.clamp(-tensor1, min=1e-6))
-            loss = (G - tensor1) ** 2
+            _tensor1 = torch.log(torch.clamp(-tensor1, min=1e-6))
+            loss = (_G - _tensor1) ** 2
             loss.backward()
             return loss
 

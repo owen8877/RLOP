@@ -12,24 +12,24 @@ from lib.util.pricing import bs_euro_vanilla_call, delta_hedge_bs_euro_vanilla_c
 
 
 def in_transform(x: torch.Tensor) -> torch.Tensor:
-    x[:, 0].log_()  # spot
-    x[:, 3].log_()  # strike
+    # x[:, 0].log_()  # spot
+    # x[:, 3].log_()  # strike
     return x
 
 
 def out_transform(y: torch.Tensor) -> torch.Tensor:
-    y[:, 0] = torch.exp(y[:, 0])  # price
-    y[:, 1] = 1 / (1 + torch.exp(-y[:, 1]))  # delta
+    y[:, 0] = -torch.exp(y[:, 0])  # price
+    y[:, 1] = torch.sigmoid(y[:, 1])  # delta
     return y
 
 
 class Test(TestCase):
     def test_get_pretrained_nn(self):
         # configs
-        num_epochs = 200
-        batch_size = 10_000
+        num_epochs = 100
+        batch_size = 100_000
 
-        train_n, test_n = 100_000, 10_000
+        train_n, test_n = 1_000_000, 100_000
 
         net = CombinedResNet(
             input_dim=9,
@@ -38,7 +38,7 @@ class Test(TestCase):
             activation="elu",
             groups=3,
             layer_per_group=3,
-        )
+        ).cuda()
         optimizer = optim.Adam(net.parameters(), lr=1e-3)
 
         # heavylifting
@@ -46,7 +46,7 @@ class Test(TestCase):
             print("Warning: No GPU found, using CPU instead.")
 
         def get_Xy(n: int):
-            K = np.exp(np.random.rand(n) * 5 - 1)
+            K = np.exp(np.random.rand(n) * 2 - 1)
             t_pass = np.random.rand(n) * 1.9 + 0.1
             risk_lambda = np.random.rand(n) * 1.0
             friction = np.random.rand(n) * 0.01
@@ -58,12 +58,15 @@ class Test(TestCase):
             dplus = np.random.randn(n) * 1.5
             S = K * np.exp(dplus * sigma * np.sqrt(T) - (r + 0.5 * sigma**2) * T)
 
+            def tr(S):
+                return (-(mu - sigma**2 / 2) * (T - t_pass) + np.log(S)) / sigma
+
             X = np.stack(
                 [
-                    S,  # normal_price
+                    tr(S),  # normal_price
                     t_pass,  # passed_real_time
                     T,  # remaining_real_time
-                    K,  # normal_strike_price
+                    tr(K),  # normal_strike_price
                     r,  # r
                     mu,  # mu
                     sigma,  # sigma
@@ -77,26 +80,18 @@ class Test(TestCase):
             delta = delta_hedge_bs_euro_vanilla_call(S, K, T, r, sigma)
             Y = np.stack([y, delta], axis=1)
 
-            return torch.tensor(X, dtype=torch.float32), torch.tensor(Y, dtype=torch.float32)
+            return torch.tensor(X, dtype=torch.float32).cuda(), torch.tensor(Y, dtype=torch.float32).cuda()
 
         X_train, y_train = get_Xy(train_n)
-        X_train.cuda()
-        y_train.cuda()
         X_test, y_test = get_Xy(test_n)
-        X_test.cuda()
-        y_test.cuda()
 
         def criterion(y_pred, y_true):
             price_pred, delta_pred = y_pred[:, 0], y_pred[:, 1]
             price_true, delta_true = y_true[:, 0], y_true[:, 1]
 
-            price_loss = torch.mean((torch.log(price_pred + 1e-8) - torch.log(price_true + 1e-8)) ** 2)
-            safe_lower, safe_upper = 1e-6, 1 - 1e-6
-            delta_pred = torch.clamp(delta_pred, safe_lower, safe_upper)
-            delta_true = torch.clamp(delta_true, safe_lower, safe_upper)
-            delta_loss = torch.mean(
-                (torch.log(delta_pred / (1 - delta_pred)) - torch.log(delta_true / (1 - delta_true))) ** 2
-            )
+            price_loss = torch.mean((torch.log(-price_pred + 1e-8) - torch.log(price_true + 1e-8)) ** 2)
+            # price_loss = torch.mean((price_pred + price_true) ** 2)
+            delta_loss = torch.mean((torch.logit(delta_pred, 1e-3) - torch.logit(delta_true, 1e-3)) ** 2)
 
             return price_loss + delta_loss
 
@@ -165,22 +160,25 @@ class Test(TestCase):
         # visualize the predicted price by setting strike=10, r=0.01, sigma=0.2, T=1, and varying spot from 1 to 20
         import matplotlib.pyplot as plt
 
-        S = np.linspace(1, 20, 100)
-        K = 0 * S + 10
-        t_pass = 0 * S + 0.5
-        risk_lambda = 0 * S + 0.5
-        friction = 0 * S + 0.005
-        mu = 0 * S + 0.5
-        T = 0 * S + 1.0
-        sigma = 0 * S + 0.5
-        r = 0 * S + 0.25
+        S = np.linspace(0.2, 5, 100)
+        K = 0 * S + 1
+        t_pass = 0 * S + 0
+        risk_lambda = 0 * S + 1.0
+        friction = 0 * S + 0
+        mu = 0 * S + 0.05
+        T = 0 * S + 0.8
+        sigma = 0 * S + 0.3
+        r = 0 * S + 0.02
+
+        def tr(S):
+            return (-(mu - sigma**2 / 2) * (T - t_pass) + np.log(S)) / sigma
 
         X = np.stack(
             [
-                S,  # normal_price
+                tr(S),  # normal_price
                 t_pass,  # passed_real_time
                 T,  # remaining_real_time
-                K,  # normal_strike_price
+                tr(K),  # normal_strike_price
                 r,  # r
                 mu,  # mu
                 sigma,  # sigma
@@ -189,6 +187,7 @@ class Test(TestCase):
             ],
             axis=1,
         )
+        print(X)
 
         price_bs = bs_euro_vanilla_call(S, K, T, r, sigma)
         delta_bs = delta_hedge_bs_euro_vanilla_call(S, K, T, r, sigma)
@@ -198,7 +197,7 @@ class Test(TestCase):
         fig, axs = plt.subplots(2, 1, figsize=(8, 10), sharex=True)
 
         axs[0].plot(S, price_bs, label="BS")
-        axs[0].plot(S, price_net, label="NN")
+        axs[0].plot(S, -price_net, label="NN")
         axs[0].set(ylabel="Call Option Price", title="Call Option Price vs Spot Price")
         axs[0].legend()
         axs[0].grid()
