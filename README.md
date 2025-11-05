@@ -4,20 +4,11 @@ uv sync
 ```
 then you should be able to find a test under lib2/test_hello_world.py (in vscode it is "Explorer: Focus on Test Explorer View" command)
 
+
+# Run summarized test
+- setup env `conda install -c anaconda matplotlib numpy pandas jupyter gymnasium scipy tensorboard seaborn yfinance pandas-datareader -y`
+- place `SPY Options 2025.csv` under `data/`
+- run `python -m unittest lib/qlbs2/test_summarized.py` at project root directory
+
 # Misc
 - tensor board: `tensorboard --logdir=runs`
-
-# How to run experiments
-
-- Install the environment by `conda env create -n [NAME] --file env.yml`
-- For QLBS: run by unittest in the module `qlbs`
-    - `experiment1.Experiment1.test_mutation_or_not`, followed by `experiment1.Experiment1.test_draw_plot` (Fig. 3a &
-      3b)
-    - `experiment2.Experiment2.test_bs_value`, followed by `experiment2.Experiment2.test_draw_plot` (Fig. 4)
-    - `experiment3.Experiment3.test_tc`, followed by `experiment3.Experiment3.test_draw_plot` (Fig. 5)
-    - `experiment4.Experiment4.test_mixed` and `experiment4.Experiment4.test_focused`, followed
-      by `experiment4.Experiment4.test_draw_plot` (Fig. 6)
-- For RLOP: run by unittest in the module `rlop`
-    - `experiment1.Experiment1.test_mutation_or_not`, followed by `experiment1.Experiment1.test_draw_plot`
-      and `experiment1.Experiment1.test_compared_with_bs` (Fig, 8a & 8b)
-    - `experiment2.Experiment2.test_tc`, followed by `experiment2.Experiment2.test_draw_plot` (Fig. 9)

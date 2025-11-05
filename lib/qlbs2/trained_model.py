@@ -176,15 +176,16 @@ class QLBSFitResult:
 
 
 class QLBSModel:
-    def __init__(self, is_call_option: bool, checkpoint: str):
+    def __init__(self, is_call_option: bool, checkpoint: str, anchor_T: float):
         assert is_call_option, "Only call option is supported in this model."
         self.nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=checkpoint)
         self.nn_baseline = NNBaseline_v6(self.nn_policy.theta_mu, self.nn_policy.optimizer)
+        self.anchor_T = anchor_T
 
-    def fit_predict(
+    def fit(
         self,
         spot: float,
-        time_to_expiry: float,
+        time_to_expiries: np.ndarray,
         strikes: np.ndarray,
         r: float,
         risk_lambda: float,
@@ -199,15 +200,18 @@ class QLBSModel:
         assert len(observed_prices) == N, "Length of observed_prices must match strikes"
         assert len(weights) == N, "Length of weights must match strikes"
 
-        sigma = torch.tensor(sigma_guess, requires_grad=True, dtype=torch.float32)
+        assert sigma_guess > 0
+        sigma = torch.tensor(sp.special.logit(sigma_guess), requires_grad=True, dtype=torch.float32)
         mu = torch.tensor(mu_guess, requires_grad=True, dtype=torch.float32)
-        optimizer = torch.optim.Adam([sigma, mu], lr=0.1)
+        optimizer = torch.optim.Adam([sigma, mu], lr=0.5)
+        # optimizer = torch.optim.LBFGS([sigma, mu], lr=0.1, max_iter=20, line_search_fn="strong_wolfe")
 
         _scaled_strikes = torch.tensor(strikes / spot, dtype=torch.float32)
         _scaled_prices = torch.tensor(observed_prices / spot, dtype=torch.float32)
-        _scaled_rs = torch.full((N,), r * time_to_expiry, dtype=torch.float32)
+        _scaled_tte = torch.tensor(time_to_expiries / self.anchor_T, dtype=torch.float32)
+        _scaled_rs = r * _scaled_tte
         _scaled_risk_lambdas = torch.full((N,), risk_lambda, dtype=torch.float32)
-        _scaled_frictions = torch.full((N,), friction * spot, dtype=torch.float32)
+        _scaled_frictions = torch.full((N,), friction, dtype=torch.float32)
         _scaled_weights = torch.tensor(weights * np.sqrt(spot), dtype=torch.float32)
 
         _zeros, _ones = torch.zeros(N, dtype=torch.float32), torch.ones(N, dtype=torch.float32)
@@ -217,11 +221,11 @@ class QLBSModel:
                 [
                     _ones,  # spot
                     _zeros,  # passed_real_time
-                    _ones,  # remaining_real_time
+                    _ones * self.anchor_T,  # remaining_real_time
                     _scaled_strikes,  # strike
                     _scaled_rs,
-                    (mu * time_to_expiry).expand(N),  # mu
-                    (sigma * np.sqrt(time_to_expiry)).expand(N),  # sigma
+                    (mu * _scaled_tte),  # mu
+                    ((torch.sigmoid(sigma) + 0.01) * torch.sqrt(_scaled_tte)),  # sigma
                     _scaled_risk_lambdas,  # risk_lambda
                     _scaled_frictions,  # friction
                 ],
@@ -235,22 +239,123 @@ class QLBSModel:
             loss.backward()
             return loss
 
+        loss_history = []
         for epoch in range(n_epochs + 1):
             optimizer.zero_grad()
+            optimizer.step(loss)
             l = loss()
-            optimizer.step()
-            if epoch % 50 == 0 or epoch == n_epochs:
-                print(f"Epoch {epoch}: loss={l.item():.6f}, sigma={sigma.item():.6f}, mu={mu.item():.6f}")
+            if epoch % 50 == 0:
+                print(
+                    f"Epoch {epoch}: loss={l.item():.6f}, sigma={(torch.sigmoid(sigma) + 0.01).item():.6f}, mu={mu.item():.6f}"
+                )
+
+            if l < 1e-7:
+                print("Early stopping as loss is sufficiently small.")
+                break
+
+            if epoch > 100 and l.item() > loss_history[-100] * 0.9:
+                print("Early stopping as loss has not decreased sufficiently.")
+                break
+            loss_history.append(l.item())
+
+        with torch.no_grad():
+            state_info_tensor = get_state_info_tensor(mu, sigma)
+            estimated_price, latent_vol = self.nn_baseline.batch_estimate(state_info_tensor, return_latent_vol=True)  # type: ignore
+
+        # print(sigma, mu)
+        return QLBSFitResult(
+            sigma=(torch.sigmoid(sigma) + 0.01).item(),
+            mu=mu.item(),
+            estimated_prices=(-estimated_price.numpy() * spot),
+            implied_vols=(latent_vol.numpy() / np.sqrt(time_to_expiries)),
+        )
+
+    def predict(
+        self,
+        spot: float,
+        time_to_expiries: np.ndarray,
+        strikes: np.ndarray,
+        r: float,
+        risk_lambda: float,
+        friction: float,
+        sigma_fit: float,
+        mu_fit: float,
+    ):
+        sigma = torch.tensor(sigma_fit, requires_grad=True, dtype=torch.float32)
+        mu = torch.tensor(mu_fit, requires_grad=True, dtype=torch.float32)
+
+        N = len(strikes)
+        _scaled_strikes = torch.tensor(strikes / spot, dtype=torch.float32)
+        _scaled_rs = torch.tensor(r * time_to_expiries, dtype=torch.float32)
+        _scaled_tte = torch.tensor(time_to_expiries / self.anchor_T, dtype=torch.float32)
+        _scaled_risk_lambdas = torch.full((N,), risk_lambda, dtype=torch.float32)
+        _scaled_frictions = torch.full((N,), friction * spot, dtype=torch.float32)
+
+        _zeros, _ones = torch.zeros(N, dtype=torch.float32), torch.ones(N, dtype=torch.float32)
+
+        def get_state_info_tensor(mu, sigma):
+            return torch.stack(
+                [
+                    _ones,  # spot
+                    _zeros,  # passed_real_time
+                    _ones * self.anchor_T,  # remaining_real_time
+                    _scaled_strikes,  # strike
+                    _scaled_rs,
+                    (mu * _scaled_tte),  # mu
+                    ((torch.sigmoid(sigma) + 0.01) * torch.sqrt(_scaled_tte)),  # sigma
+                    _scaled_risk_lambdas,  # risk_lambda
+                    _scaled_frictions,  # friction
+                ],
+                dim=1,
+            )
 
         with torch.no_grad():
             state_info_tensor = get_state_info_tensor(mu, sigma)
             estimated_price, latent_vol = self.nn_baseline.batch_estimate(state_info_tensor, return_latent_vol=True)  # type: ignore
 
         return QLBSFitResult(
-            sigma=sigma.item(),
+            sigma=(torch.sigmoid(sigma) + 0.01).item(),
             mu=mu.item(),
             estimated_prices=(-estimated_price.numpy() * spot),
-            implied_vols=(latent_vol.numpy() / np.sqrt(time_to_expiry)),
+            implied_vols=(latent_vol.numpy() / np.sqrt(time_to_expiries)),
+        )
+
+    def fit_predict(
+        self,
+        spot: float,
+        time_to_expiries: np.ndarray,
+        strikes: np.ndarray,
+        r: float,
+        risk_lambda: float,
+        friction: float,
+        observed_prices: np.ndarray,
+        weights: np.ndarray,
+        sigma_guess: float,
+        mu_guess: float,
+        n_epochs: int = 200,
+    ):
+        result = self.fit(
+            spot=spot,
+            time_to_expiries=time_to_expiries,
+            strikes=strikes,
+            r=r,
+            risk_lambda=risk_lambda,
+            friction=friction,
+            observed_prices=observed_prices,
+            weights=weights,
+            sigma_guess=sigma_guess,
+            mu_guess=mu_guess,
+            n_epochs=n_epochs,
+        )
+        return self.predict(
+            spot=spot,
+            time_to_expiries=time_to_expiries,
+            strikes=strikes,
+            r=r,
+            risk_lambda=risk_lambda,
+            friction=friction,
+            sigma_fit=result.sigma,
+            mu_fit=result.mu,
         )
 
 
@@ -302,7 +407,7 @@ class TestTrainedModel(TestCase):
         )
         result = model.fit_predict(
             spot=spot,
-            time_to_expiry=T,
+            time_to_expiries=T,
             strikes=Ks,
             r=r,
             risk_lambda=risk_lambda,

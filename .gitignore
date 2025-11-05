@@ -13,3 +13,5 @@ __pycache__
 .ipynb_checkpoints
 runs
 lib0
+data/
+*_baseline/

@@ -32,5 +32,5 @@
             }
         }
     },
-    "postCreateCommand": "conda install matplotlib numpy pandas jupyter gymnasium scipy tensorboard seaborn -y"
+    "postCreateCommand": "conda install -c anaconda matplotlib numpy pandas jupyter gymnasium scipy tensorboard seaborn yfinance pandas-datareader -y"
 }
