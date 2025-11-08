@@ -628,7 +628,7 @@ def summarize_symbol_period_ivrmse(
     run_bs: bool = True,
     run_jd: bool = True,
     run_heston: bool = True,
-    run_qlbs: bool = True,
+    run_RLOP: bool = True,
     show_progress: bool = True,
     print_daily: bool = True,
     out_dir: Optional[str] = None,
@@ -755,16 +755,16 @@ def summarize_symbol_period_ivrmse(
                     }
                 )
 
-            # QLBS model
+            # RLOP model
             ##########################################################################
-            # NOTE: this part is the new QLBS model
+            # NOTE: this part is the new RLOP model
             ##########################################################################
-            if run_qlbs:
-                from .test_trained_model import QLBSModel
+            if run_RLOP:
+                from .test_trained_model import RLOPModel
 
-                Qmodel = QLBSModel(
+                Rmodel = RLOPModel(
                     is_call_option=True,
-                    checkpoint="trained_model/test8/risk_lambda=1.0e-01/policy_1.pt",
+                    checkpoint="trained_model/testr9/policy_1.pt",
                     anchor_T=28 / 252,
                 )
                 # spot = (g["F"] * np.exp(-g["r"] * g["tau"])).iloc[0]
@@ -780,7 +780,7 @@ def summarize_symbol_period_ivrmse(
                 inv_price = 1 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
 
                 try:
-                    result = Qmodel.fit(
+                    result = Rmodel.fit(
                         spot=spot,
                         time_to_expiries=time_to_expiries,
                         strikes=strikes,
@@ -815,8 +815,8 @@ def summarize_symbol_period_ivrmse(
                     #     import pdb
                     #     pdb.set_trace()
 
-                    def qlbs_price(F, K, tau, r):
-                        _result = Qmodel.predict(
+                    def rlop_price(F, K, tau, r):
+                        _result = Rmodel.predict(
                             spot=F,
                             time_to_expiries=np.array([tau]),
                             strikes=np.array([K]),
@@ -828,15 +828,15 @@ def summarize_symbol_period_ivrmse(
                         )
                         return _result.estimated_prices[0]
 
-                    ivs = _ivrmse_vs_model_prices(g, qlbs_price)
+                    ivs = _ivrmse_vs_model_prices(g, rlop_price)
                 except KeyboardInterrupt:
                     ivs = {"whole": np.nan, "<1": np.nan, ">1": np.nan, ">1.03": np.nan}
                 row.update(
                     {
-                        "QLBS_IVRMSE_x1000_Whole": ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
-                        "QLBS_IVRMSE_x1000_<1": ivs["<1"] * 1000 if np.isfinite(ivs["<1"]) else np.nan,
-                        "QLBS_IVRMSE_x1000_>1": ivs[">1"] * 1000 if np.isfinite(ivs[">1"]) else np.nan,
-                        "QLBS_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
+                        "RLOP_IVRMSE_x1000_Whole": ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
+                        "RLOP_IVRMSE_x1000_<1": ivs["<1"] * 1000 if np.isfinite(ivs["<1"]) else np.nan,
+                        "RLOP_IVRMSE_x1000_>1": ivs[">1"] * 1000 if np.isfinite(ivs[">1"]) else np.nan,
+                        "RLOP_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
                     }
                 )
 
@@ -861,7 +861,7 @@ def summarize_symbol_period_ivrmse(
             ("BS", "BS_IVRMSE_x1000_Whole"),
             ("JD", "JD_IVRMSE_x1000_Whole"),
             ("Heston", "Heston_IVRMSE_x1000_Whole"),
-            ("QLBS", "QLBS_IVRMSE_x1000_Whole"),
+            ("RLOP", "RLOP_IVRMSE_x1000_Whole"),
         ]:
             if col in day_df.columns:
                 pooled = _pooled_rmse_x1000(day_df[["N", col]].rename(columns={col: "val"}), "val")
@@ -944,10 +944,10 @@ def make_publication_table(
     present = set(df_src.columns)
     models = [
         m
-        for m, prefix in [("BS", "BS"), ("JD", "JD"), ("SV", "Heston"), ("QLBS", "QLBS")]
+        for m, prefix in [("BS", "BS"), ("JD", "JD"), ("SV", "Heston"), ("RLOP", "RLOP")]
         if any(col.startswith(f"{prefix}_IVRMSE_x1000") for col in present)
     ]
-    model_to_prefix = {"BS": "BS", "JD": "JD", "SV": "Heston", "QLBS": "QLBS"}
+    model_to_prefix = {"BS": "BS", "JD": "JD", "SV": "Heston", "RLOP": "RLOP"}
 
     sections = [("Whole sample", "Whole"), ("Moneyness <1", "<1"), ("Moneyness >1", ">1"), ("Moneyness >1.03", ">1.03")]
     bucket_labels = [f"{d}d" for d in buckets]
@@ -1033,7 +1033,7 @@ class FullTest(TestCase):
             run_bs=True,
             run_jd=True,
             run_heston=False,
-            run_qlbs=True,
+            run_RLOP=True,
             show_progress=True,
             print_daily=True,
             out_dir="SPY_25Q2_baseline",  # outputs saved here
