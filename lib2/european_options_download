@@ -1,55 +1,34 @@
 import datetime as dt
-import time, requests, pandas as pd
+import requests, pandas as pd
 
 DERIBIT = "https://www.deribit.com/api/v2"
 
-def download_deribit_options(underlying="BTC", start="2025-01-01", end="2025-01-31",
-                             sleep_sec=0.1):
+def download_deribit_options(underlying="BTC", timeout=30):
     """
-    Download Deribit option book summaries for each day in [start, end].
-    Each record includes instrument_name, bid/ask/last, mark_iv, and index/underlying price.
+    Download the **current** Deribit option book summary snapshot for `underlying`.
+    Returns a DataFrame with all fields from Deribit plus:
+      - run_date : UTC date when this function was executed
+    Note: The API's per-row `creation_timestamp` is the actual snapshot time.
     """
-    start_d, end_d = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
-    all_frames = []
-    cur = start_d
-    while cur <= end_d:
-        print(f"[{cur}] fetching...", end=" ")
-        try:
-            resp = requests.get(
-                f"{DERIBIT}/public/get_book_summary_by_currency",
-                params={"currency": underlying.upper(), "kind": "option"},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()["result"]
-            if not data:
-                print("empty.")
-                cur += dt.timedelta(days=1)
-                continue
+    resp = requests.get(
+        f"{DERIBIT}/public/get_book_summary_by_currency",
+        params={"currency": underlying.upper(), "kind": "option"},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    data = resp.json().get("result", [])
+    if not data:
+        raise RuntimeError("Empty snapshot from Deribit.")
 
-            df = pd.DataFrame(data)
-            df["date"] = cur
-            all_frames.append(df)
-            print(f"ok ({len(df)} rows)")
-        except Exception as e:
-            print("error:", e)
-        cur += dt.timedelta(days=1)
-        time.sleep(sleep_sec)
-
-    if not all_frames:
-        raise RuntimeError("No data fetched from Deribit.")
-
-    df_all = pd.concat(all_frames, ignore_index=True)
-    
-    return df_all
+    df = pd.DataFrame(data)
+    df["run_date"] = dt.datetime.utcnow().date()
+    return df
 
 df = download_deribit_options(
-    underlying="BTC",
-    start="2020-01-01",
-    end="2020-03-31",
+    underlying="BTC"
 )
 df.head()
 
-fname = f"./BTC_E_Options_20Q1.csv"
+fname = f"./BTC_E_Options_09NOV25.csv"
 df.to_csv(fname, index=False)
 print(f"Saved {fname}")
