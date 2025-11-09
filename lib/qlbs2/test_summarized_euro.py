@@ -385,8 +385,8 @@ def prepare_calls_one_day_symbol(
     ##########################################################################
     # NOTE: add this hack to inject spot and SOFR_Rate into pvt
     ##########################################################################
-    df_extra = df[["date", "symbol", "expiration", "tau", "strike", "spot", "SOFR_Rate"]].drop_duplicates()
-    pvt = pvt.merge(df_extra, on=["date", "symbol", "expiration", "tau", "strike"], how="left")
+    # df_extra = df[["date", "symbol", "expiration", "tau", "strike", "spot", "SOFR_Rate"]].drop_duplicates()
+    # pvt = pvt.merge(df_extra, on=["date", "symbol", "expiration", "tau", "strike"], how="left")
     ##########################################################################
 
     # infer F, DF, r per expiry
@@ -407,8 +407,9 @@ def prepare_calls_one_day_symbol(
         ##########################################################################
         # NOTE: hacking r and F
         ##########################################################################
-        gg["F"] = gg["spot"]
-        gg["r"] = gg["SOFR_Rate"] / 100
+        # gg["F"] = gg["spot"]
+        # gg["r"] = gg["SOFR_Rate"] / 100
+        ##########################################################################
         recs.append(gg)
         parity_rows.append(
             {
@@ -416,17 +417,16 @@ def prepare_calls_one_day_symbol(
                 "symbol": sym,
                 "expiration": exp,
                 "tau": tau,
-                # "F": F,
+                "F": F,
                 "DF": DF,
-                # "r": r,
+                "r": r,
                 "n_pairs": len(g),
                 # "spot": gg["spot"].iloc[0],
                 # "SOFR_Rate": gg["SOFR_Rate"].iloc[0],
-                "F": gg["spot"].iloc[0],
-                "r": gg["SOFR_Rate"].iloc[0] / 100,
+                # "F": gg["spot"].iloc[0],
+                # "r": gg["SOFR_Rate"].iloc[0] / 100,
             }
         )
-        ##########################################################################
 
     if not recs:
         return pd.DataFrame(), pd.DataFrame()
@@ -762,10 +762,9 @@ def summarize_symbol_period_ivrmse(
             if run_qlbs:
                 from .test_trained_model import QLBSModel
 
-                risk_lambda = 0.01
                 Qmodel = QLBSModel(
                     is_call_option=True,
-                    checkpoint=f"trained_model/test8/risk_lambda={risk_lambda:.1e}/policy_1.pt",
+                    checkpoint="trained_model/test8/risk_lambda=1.0e-01/policy_1.pt",
                     anchor_T=28 / 252,
                 )
                 # spot = (g["F"] * np.exp(-g["r"] * g["tau"])).iloc[0]
@@ -773,6 +772,7 @@ def summarize_symbol_period_ivrmse(
                 time_to_expiries = g["tau"].to_numpy()
                 strikes = g["strike"].to_numpy()
                 r = g["r"].iloc[0]
+                risk_lambda = 0.1
                 friction = 4e-3
                 observed_prices = g["C_mid"].to_numpy()
 
@@ -1007,59 +1007,33 @@ def make_publication_table(
 
 
 class FullTest(TestCase):
-    def test_SPY(self):
-        df = pd.read_csv("data/SPY Options 2025.csv")
-        ##########################################################################
-        # NOTE: add this hack to inject SPY price
-        ##########################################################################
-        df_spot_sofr = pd.read_csv("data/spy_eod_and_box_rate.csv")
-        df = df.merge(
-            df_spot_sofr.rename(columns={"Date": "date", "SPY": "spot", "SOFR_Rate": "SOFR_Rate"}),
-            on="date",
-            how="left",
-        )
+    def test_BTC(self):
+        df_pre = pd.read_csv("data/BTC_E_Options_09NOV25_processed.csv")
 
         res = summarize_symbol_period_ivrmse(
-            df_all=df,
-            symbol="SPY",
-            start_date="2025-04-01",
-            ##########################################################################
-            # NOTE: end date has been changed to reduce workload
-            ##########################################################################
-            end_date="2025-04-05",
-            buckets=[14, 28, 56],
+            df_all=df_pre,
+            symbol="BTC",
+            start_date="2025-11-09",
+            end_date="2025-11-09",
+            buckets=[7, 30, 90],
             min_parity_pairs=4,
             tau_floor_days=3,
             run_bs=True,
             run_jd=True,
-            run_heston=False,
+            run_heston=True,
             run_qlbs=True,
             show_progress=True,
             print_daily=True,
-            out_dir="SPY_25Q2_baseline",  # outputs saved here
+            out_dir="BTC_09NOV25_baseline",  # outputs saved here
         )
 
         # PRIMARY (paper): equal-day mean table
         tbl_equal = make_publication_table(
             res,
-            symbol="SPY",
+            symbol="BTC",
             measure="equal",
-            buckets=[14, 28, 56],
+            buckets=[7, 30, 90],
             decimals=2,
-            out_dir="SPY_25Q2_baseline",
+            out_dir="BTC_09NOV25_baseline",
             basename="table_ivrmse",
         )
-
-        # SECONDARY (robustness): pooled table
-        tbl_pooled = make_publication_table(
-            res,
-            symbol="SPY",
-            measure="pooled",
-            buckets=[14, 28, 56],
-            decimals=2,
-            out_dir="SPY_25Q2_baseline",
-            basename="table_ivrmse",
-        )
-
-        print(tbl_equal)
-        print(tbl_pooled)

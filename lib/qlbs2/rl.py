@@ -83,6 +83,12 @@ def policy_gradient(
         writer.add_scalar("pi_loss", pi_loss if not pi_frozen else np.nan, e + 1)  # type: ignore
         writer.add_scalar("V_loss", V_loss if not V_frozen else np.nan, e + 1)  # type: ignore
 
+        print(
+            f"Episode {e + 1}/{episode_n}: "
+            f"V_loss={V_loss if not V_frozen else 'frozen'}, "
+            f"pi_loss={pi_loss if not pi_frozen else 'frozen'}"
+        )
+
         if (e + 1) % 100 == 0 and tensorboard_label:
             ax.cla()
             collector.plot(ax)

@@ -8,6 +8,8 @@ import seaborn as sns
 import torch
 from matplotlib import pyplot as plt
 
+from ..util import ensure_dir
+
 from .bs import BSBaseline, BSPolicy
 from .env import EnvSetup, RLOPEnv
 from .nn_v6 import GaussianPolicy_v6, NNBaseline_v6, PriceEstimator_v6
@@ -246,4 +248,115 @@ class Training(TestCase):
 
         plt.xlabel("Spot Price")
         plt.tight_layout()
+        plt.show()
+
+    def test_draw_influence_of_mu(self):
+        check_point = 1
+
+        setup = self._parameters()
+        is_call_option = True
+        path = self._path()
+
+        T, K, r, sigma, friction = 28 / 252, 1.0, 0.04, 0.2, 1e-3
+        initial_spots = np.linspace(0.8, 1.2, 50)
+
+        fig, axs = plt.subplots(2, 1, figsize=(7, 9), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("mako", n_colors=4)
+
+        def build_state_info_tensor(mu):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = 0  # risk_lambda
+            state_info_tensor[:, 8] = friction  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_price_estimator = PriceEstimator_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        for i, mu in enumerate([-2, 0, 2]):
+            tensor = build_state_info_tensor(mu)
+
+            if i == 0:
+                bs_baseline = BSBaseline(is_call=is_call_option)
+                bs_price = bs_baseline.batch_estimate(tensor)
+                axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_price_estimator.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            axs[0].plot(initial_spots, nn_price, label=f"mu={mu}", color=palette[i + 1], linestyle="-")
+            axs[0].set_ylabel("Option Price")
+
+            axs[1].plot(initial_spots, nn_latent_vol, label=f"mu={mu}", color=palette[i + 1], linestyle="-")
+            axs[1].set_ylabel("Latent Vol")
+
+        axs[0].legend(loc="best")
+
+        path = "plot/rlop2/testr9/influence_of_mu.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        plt.show()
+
+    def test_draw_influence_of_friction(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = risk_lambdas[0]
+        is_call_option = True
+        path = self._path(risk_lambda)
+
+        T, K, r, sigma, mu = 28 / 252, 1.0, 0.04, 0.5, -2
+        initial_spots = np.linspace(0.8, 1.2, 50)
+
+        fig, axs = plt.subplots(2, 1, figsize=(7, 9), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("mako", n_colors=4)
+
+        def build_state_info_tensor(eps):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambdas[0]  # risk_lambda
+            state_info_tensor[:, 8] = eps  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        for i, eps in enumerate([1, 3, 5]):
+            tensor = build_state_info_tensor(eps)
+
+            if i == 0:
+                bs_baseline = BSBaseline(is_call=is_call_option)
+                bs_price = bs_baseline.batch_estimate(tensor)
+                axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            axs[0].plot(initial_spots, nn_price, label=f"eps={eps}", color=palette[i + 1], linestyle="-")
+            axs[0].set_ylabel("Option Price")
+
+            axs[1].plot(initial_spots, nn_latent_vol, label=f"eps={eps}", color=palette[i + 1], linestyle="-")
+            axs[1].set_ylabel("Latent Vol")
+
+        axs[0].legend(loc="best")
+
+        path = "plot/qlbs2/test8/influence_of_friction.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
         plt.show()
