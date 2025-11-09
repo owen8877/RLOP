@@ -1,0 +1,243 @@
+import math, os
+from pathlib import Path
+from typing import Dict, Tuple, Optional
+
+import numpy as np
+import pandas as pd
+
+
+def preprocess_american_to_european(
+    options_csv: str,
+    spot_rate_csv: str,
+    dividends_csv: Optional[str],
+    symbol: str = "SPY",
+    out_dir: Optional[str] = None,
+    atm_band: Tuple[float, float] = (0.97, 1.03),
+    clip_to_intrinsic: bool = True,  # kept for compatibility
+    eps: float = 1e-8,
+    *,
+    date_col: Optional[str] = None,  # default: "Date" or "date"
+    spot_col: Optional[str] = None,  # default: symbol (e.g., "SPY")
+    rate_col: Optional[str] = None,  # default: "SOFR_Rate" (fallbacks: "SOFR","r")
+) -> Dict[str, pd.DataFrame]:
+    MIN_PAIRS = 5  # require enough ATM C/P pairs to trust alpha
+
+    # ---------- helpers ----------
+    def _normalize_cp(x: str) -> str:
+        if isinstance(x, str):
+            y = x.strip().upper()
+            if y in ("C", "CALL"): return "Call"
+            if y in ("P", "PUT"):  return "Put"
+        return x
+
+    def _to_dt(s): return pd.to_datetime(s, errors="coerce")
+    def _num(s):   return pd.to_numeric(s, errors="coerce")
+
+    def _detect_rate_scale(series: pd.Series) -> pd.Series:
+        s = _num(series)
+        # if looks like percent (e.g., 5.25) -> convert to decimal (0.0525)
+        if s.dropna().median() > 1.0:
+            s = s / 100.0
+        return s
+
+    def _pv_div(div_df: pd.DataFrame, t: pd.Timestamp, T: pd.Timestamp, r: float) -> float:
+        if div_df is None or div_df.empty: return 0.0
+        m = (div_df["div_date"] > t) & (div_df["div_date"] <= T)
+        if not m.any(): return 0.0
+        dd = div_df.loc[m].copy()
+        dt = (dd["div_date"] - t).dt.days / 365.0
+        return float((dd["dividend"] * np.exp(-r * dt)).sum())
+    # -----------------------------
+
+    # --- load options (unchanged core logic) ---
+    opts_raw = pd.read_csv(options_csv, engine="python")
+    orig_cols = list(opts_raw.columns)
+
+    rename = {"date":"date","expiration":"expiration","strike":"strike","call_put":"cp","bid":"bid","ask":"ask"}
+    if "act_symbol" in opts_raw.columns: rename["act_symbol"] = "symbol"
+    elif "symbol" in opts_raw.columns:   rename["symbol"] = "symbol"
+    else: raise ValueError(f"Options CSV missing symbol column. Found: {list(opts_raw.columns)}")
+
+    df = opts_raw.rename(columns=rename).copy()
+    df["date"]       = _to_dt(df["date"]).dt.normalize()
+    df["expiration"] = _to_dt(df["expiration"]).dt.normalize()
+    df["cp"]         = df["cp"].apply(_normalize_cp)
+    df = df[df["symbol"].astype(str).str.strip().str.upper() == symbol].copy()
+
+    for c in ("strike","bid","ask"):
+        df[c] = _num(df[c])
+    df = df[(df["bid"].notna()) & (df["ask"].notna()) & (df["strike"].notna())]
+    df = df[(df["ask"] >= df["bid"]) & (df["bid"] >= 0)]
+    df["mid"]       = (df["bid"] + df["ask"]) / 2.0
+    df["tau_days"]  = (df["expiration"] - df["date"]).dt.days
+    df              = df[df["tau_days"] > 0].copy()
+    df["tau_years"] = df["tau_days"] / 365.0
+
+    # --- spot & rate (simple, minimal generalization) ---
+    spot_raw = pd.read_csv(spot_rate_csv, engine="python").copy()
+    cols = set(spot_raw.columns)
+
+    # date column
+    if date_col is None:
+        date_col = "Date" if "Date" in cols else ("date" if "date" in cols else None)
+    if date_col is None:
+        raise ValueError(f"spot_rate_csv needs a date column named 'Date' or 'date' (or pass date_col=...). "
+                         f"Found: {list(spot_raw.columns)}")
+    spot_raw = spot_raw.rename(columns={date_col: "date"})
+    spot_raw["date"] = _to_dt(spot_raw["date"]).dt.normalize()
+
+    # spot column (default: exact ticker)
+    if spot_col is None:
+        sym = symbol.upper()
+        if sym in cols:
+            spot_col = sym
+        elif "PX_LAST" in cols:
+            spot_col = "PX_LAST"
+        else:
+            raise ValueError(f"Price column not found. Expected '{sym}' (or pass spot_col=...). "
+                             f"Found: {list(spot_raw.columns)}")
+
+    # rate column (default: SOFR_Rate; light fallbacks)
+    if rate_col is None:
+        if   "SOFR_Rate" in cols: rate_col = "SOFR_Rate"
+        elif "SOFR"      in cols: rate_col = "SOFR"
+        elif "r"         in cols: rate_col = "r"
+        else:
+            raise ValueError("Rate column not found. Expected 'SOFR_Rate' (fallbacks: 'SOFR','r'), "
+                             f"or pass rate_col=... Found: {list(spot_raw.columns)}")
+
+    spot_raw["S"] = _num(spot_raw[spot_col])
+    spot_raw["r"] = _detect_rate_scale(spot_raw[rate_col])
+    spot = spot_raw[["date","S","r"]].dropna()
+
+    df = df.merge(spot, on="date", how="left")
+    df = df[df["S"].notna() & df["r"].notna()].copy()
+
+    # --- dividends (optional, unchanged) ---
+    div = None
+    if dividends_csv and os.path.exists(dividends_csv):
+        tmp = pd.read_csv(dividends_csv, engine="python")
+        if   "date"    in tmp.columns: tmp["div_date"] = _to_dt(tmp["date"]).dt.normalize()
+        elif "ex_date" in tmp.columns: tmp["div_date"] = _to_dt(tmp["ex_date"]).dt.normalize()
+        else:
+            first = tmp.columns[0]
+            maybe = _to_dt(tmp[first]).dt.normalize()
+            if maybe.notna().any(): tmp["div_date"] = maybe
+            else: raise ValueError("Dividends file must have a date-like column.")
+        amt_col = next((c for c in ["dividend","amount","Dividends","cash_amount","Value"] if c in tmp.columns), None)
+        if amt_col is None: raise ValueError(f"Dividends file must have an amount column. Found: {list(tmp.columns)}")
+        tmp["dividend"] = _num(tmp[amt_col])
+        div = tmp[["div_date","dividend"]].dropna().copy()
+
+    # --- DF, PV_div, F (unchanged) ---
+    rows = []
+    for (d, e), g in df.groupby(["date","expiration"], sort=True):
+        r, S, tau = float(g["r"].iloc[0]), float(g["S"].iloc[0]), float(g["tau_years"].iloc[0])
+        DF = math.exp(-r * tau)
+        D  = _pv_div(div, d, e, r) if div is not None else 0.0
+        F  = (S - D) / DF
+        rows.append({"date": d, "expiration": e, "DF": DF, "PV_div": D, "F": F})
+    df_F = pd.DataFrame(rows)
+    df   = df.merge(df_F, on=["date","expiration"], how="left")
+
+    # --- alpha_hat via near-ATM parity (unchanged) ---
+    pvt = (df.pivot_table(index=["date","expiration","strike","F","DF"],
+                          columns="cp", values="mid", aggfunc="first")
+             .reset_index()
+             .rename(columns={"Call":"C_mid","Put":"P_mid"}))
+    pairs = pvt.dropna(subset=["C_mid","P_mid"]).copy()
+    pairs["moneyness_F"] = pairs["strike"] / pairs["F"]
+    lo, hi = atm_band
+    atm = pairs[(pairs["moneyness_F"] >= lo) & (pairs["moneyness_F"] <= hi)].copy()
+
+    if atm.empty:
+        df_alpha = df[["date","expiration"]].drop_duplicates().assign(alpha_hat=0.0, n_pairs_atm=0)
+    else:
+        rows_a = []
+        for (d, e), g in atm.groupby(["date","expiration"]):
+            if len(g) >= MIN_PAIRS:
+                resid = (g["C_mid"] - g["P_mid"]) - g["DF"]*(g["F"] - g["strike"])
+                alpha_hat = float(np.median(resid))
+                n_pairs = int(len(g))
+            else:
+                alpha_hat, n_pairs = 0.0, int(len(g))
+            rows_a.append({"date": d, "expiration": e,
+                           "alpha_hat": alpha_hat,
+                           "n_pairs_atm": n_pairs})
+        df_alpha = pd.DataFrame(rows_a)
+
+    df = df.merge(df_alpha, on=["date","expiration"], how="left").fillna({"alpha_hat": 0.0, "n_pairs_atm": 0})
+
+    # --- European-equivalent call (single-sided + clamp; unchanged) ---
+    put_map = df[df["cp"]=="Put"][["date","expiration","strike","mid"]].rename(columns={"mid":"P_A"})
+    calls   = df[df["cp"]=="Call"].merge(put_map, on=["date","expiration","strike"], how="left")
+
+    calls["moneyness_F"] = calls["strike"] / calls["F"]
+    calls["in_atm_band"] = (calls["moneyness_F"] >= lo) & (calls["moneyness_F"] <= hi)
+    calls["alpha_used"]  = np.where(calls["in_atm_band"], calls["alpha_hat"], 0.0)
+
+    calls["C_A"]       = calls["mid"]
+    calls["C_eur_pre"] = np.where(calls["alpha_used"] > 0.0, calls["C_A"] - calls["alpha_used"], calls["C_A"])
+
+    calls["lower_bound"]    = np.maximum(calls["DF"] * (calls["F"] - calls["strike"]), 0.0)
+    calls["upper_from_put"] = calls["DF"] * (calls["F"] - calls["strike"]) + calls["P_A"]
+
+    valid_put = calls["P_A"].notna() & (calls["upper_from_put"] >= calls["lower_bound"] - eps)
+    calls["upper_raw"]   = np.where(valid_put, np.minimum(calls["C_A"], calls["upper_from_put"]), calls["C_A"])
+    calls["upper_bound"] = np.maximum(calls["lower_bound"], calls["upper_raw"])
+
+    calls["C_eur"] = np.clip(calls["C_eur_pre"], calls["lower_bound"], calls["upper_bound"])
+    calls["C_eur"] = np.maximum(calls["C_eur"], 0.0)  # safety floor
+
+    # --- outputs (unchanged) ---
+    keep_orig = [c for c in orig_cols if c in calls.columns]
+    extra = ["mid","tau_days","tau_years","S","r","DF","PV_div","F",
+             "n_pairs_atm","alpha_hat","alpha_used","C_eur","moneyness_F",
+             "lower_bound","upper_bound","upper_from_put","C_eur_pre","P_A"]
+    calls_out = (calls[keep_orig + extra]
+                 .sort_values(["date","expiration","strike"])
+                 .reset_index(drop=True))
+
+    coverage = (calls_out.groupby(["date","expiration"], as_index=False)
+                        .agg(N_calls=("strike","size"),
+                             n_pairs_atm=("n_pairs_atm","max"),
+                             median_alpha=("alpha_hat","median"),
+                             abs_alpha_med=("alpha_hat", lambda x: float(np.median(np.abs(x)))),
+                             atm_share=("moneyness_F", lambda s: float(((s>=lo)&(s<=hi)).mean()))))
+
+    # --- flags (unchanged) ---
+    flags_list = []
+    bad_put_bound = calls.loc[~valid_put, ["date","expiration","strike","P_A","lower_bound","upper_from_put"]].copy()
+    if not bad_put_bound.empty:
+        bad_put_bound["flag"] = "ignored_put_upper_bound"; flags_list.append(bad_put_bound)
+
+    bad_df = calls_out[(calls_out["DF"] <= 0) | (calls_out["DF"] > 1.05)].copy()
+    if not bad_df.empty:
+        bad_df["flag"] = "DF_out_of_bounds"; flags_list.append(bad_df)
+
+    zeros = calls_out[np.isclose(calls_out["C_eur"], calls_out["lower_bound"], rtol=0, atol=1e-12)].copy()
+    if not zeros.empty:
+        zeros["flag"] = "at_lower_bound"
+        flags_list.append(zeros[["date","expiration","strike","C_eur","lower_bound","F","DF","S","r","flag"]])
+
+    flags = (pd.concat(flags_list, ignore_index=True)
+             if flags_list else
+             pd.DataFrame(columns=["date","expiration","strike","flag"]))
+
+    # --- write (unchanged) ---
+    if out_dir is not None:
+        outp = Path(out_dir); outp.mkdir(parents=True, exist_ok=True)
+        calls_out.to_csv(outp / "preprocessed_calls.csv", index=False)
+        coverage.to_csv(outp / "coverage_summary.csv", index=False)
+        flags.to_csv(outp / "red_flags.csv", index=False)
+        print("Wrote:")
+        print(" -", outp / "preprocessed_calls.csv")
+        print(" -", outp / "coverage_summary.csv")
+        print(" -", outp / "red_flags.csv")
+        print(f"Rows: {len(calls_out):,} | Days: {calls_out['date'].nunique()} | Expiries: {calls_out['expiration'].nunique()}")
+        if not coverage.empty:
+            print(f"Median alpha_hat: {coverage['median_alpha'].median():.6f} | Median |alpha|: {coverage['abs_alpha_med'].median():.6f}")
+        if not flags.empty:
+            print("Flags:", flags["flag"].value_counts().to_dict())
+
+    return {"calls": calls_out, "coverage": coverage, "flags": flags}
