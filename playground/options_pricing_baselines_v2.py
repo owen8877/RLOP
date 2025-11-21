@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import pickle
+from unittest import TestCase
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
@@ -11,6 +13,7 @@ from datetime import datetime
 # Try SciPy for calibration; fall back to coarse grid if missing
 try:
     from scipy.optimize import minimize
+
     _HAVE_SCIPY = True
 except Exception:
     _HAVE_SCIPY = False
@@ -19,8 +22,10 @@ except Exception:
 # Black–76 pricing & IV inversion
 # ----------------------------
 
+
 def _norm_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
 
 def b76_price_call(F: float, K: float, tau: float, r: float, sigma: float) -> float:
     """Black–76 call price (also BS if F, DF inferred via parity)."""
@@ -36,9 +41,18 @@ def b76_price_call(F: float, K: float, tau: float, r: float, sigma: float) -> fl
     DF = math.exp(-r * tau)
     return DF * (F * _norm_cdf(d1) - K * _norm_cdf(d2))
 
-def b76_iv_from_price(target: float, F: float, K: float, tau: float, r: float,
-                      tol: float = 1e-8, max_iter: int = 100,
-                      lo: float = 1e-4, hi: float = 5.0) -> Optional[float]:
+
+def b76_iv_from_price(
+    target: float,
+    F: float,
+    K: float,
+    tau: float,
+    r: float,
+    tol: float = 1e-8,
+    max_iter: int = 100,
+    lo: float = 1e-4,
+    hi: float = 5.0,
+) -> Optional[float]:
     """Robust bisection with bracket expansion; clamps target to intrinsic."""
     if not (F > 0 and K > 0 and tau >= 0 and math.isfinite(target)):
         return None
@@ -72,9 +86,11 @@ def b76_iv_from_price(target: float, F: float, K: float, tau: float, r: float,
             a, fa = c, fc
     return 0.5 * (a + b)
 
+
 # ----------------------------
 # Put–call parity: infer F and DF
 # ----------------------------
+
 
 def parity_infer_F_DF(df_pairs: pd.DataFrame) -> Optional[Tuple[float, float]]:
     """
@@ -99,15 +115,18 @@ def parity_infer_F_DF(df_pairs: pd.DataFrame) -> Optional[Tuple[float, float]]:
         return None
     return F, DF
 
+
 # ----------------------------
 # Maturity bucketing & σ fit
 # ----------------------------
+
 
 def assign_bucket(tau_years: float, centers_days: List[int] = [14, 28, 56]) -> str:
     """Map τ (years) to nearest maturity center in days: '14d'/'28d'/'56d'."""
     days = tau_years * 365.0
     idx = int(np.argmin([abs(days - c) for c in centers_days]))
     return f"{centers_days[idx]}d"
+
 
 def fit_sigma_bucket(df_bucket: pd.DataFrame) -> float:
     """
@@ -120,9 +139,7 @@ def fit_sigma_bucket(df_bucket: pd.DataFrame) -> float:
     def sse(sig: float) -> float:
         if sig <= 0:
             return 1e18
-        prices = df_bucket.apply(
-            lambda r: b76_price_call(r["F"], r["strike"], r["tau"], r["r"], sig), axis=1
-        ).values
+        prices = df_bucket.apply(lambda r: b76_price_call(r["F"], r["strike"], r["tau"], r["r"], sig), axis=1).values
         err = prices - df_bucket["C_mid"].values
         return float(np.dot(err, err))
 
@@ -146,13 +163,24 @@ def fit_sigma_bucket(df_bucket: pd.DataFrame) -> float:
             fd = sse(d)
     return float((a + b) / 2)
 
+
 # ============================================================
 # Merton Jump–Diffusion (JD)
 # ============================================================
 
-def merton_price_call_b76(F: float, K: float, tau: float, r: float,
-                          sigma: float, lam: float, muJ: float, deltaJ: float,
-                          eps_tail: float = 1e-8, n_max: int = 80) -> float:
+
+def merton_price_call_b76(
+    F: float,
+    K: float,
+    tau: float,
+    r: float,
+    sigma: float,
+    lam: float,
+    muJ: float,
+    deltaJ: float,
+    eps_tail: float = 1e-8,
+    n_max: int = 80,
+) -> float:
     """
     Merton JD via Poisson mixture of B76 prices.
     Compensation k = E[e^Y]-1 = exp(muJ + 0.5*deltaJ^2) - 1
@@ -180,13 +208,24 @@ def merton_price_call_b76(F: float, K: float, tau: float, r: float,
         cum += p
     return float(price)
 
+
 # ============================================================
 # Merton Jump–Diffusion (JD)
 # ============================================================
 
-def merton_price_call_b76(F: float, K: float, tau: float, r: float,
-                          sigma: float, lam: float, muJ: float, deltaJ: float,
-                          eps_tail: float = 1e-8, n_max: int = 80) -> float:
+
+def merton_price_call_b76(
+    F: float,
+    K: float,
+    tau: float,
+    r: float,
+    sigma: float,
+    lam: float,
+    muJ: float,
+    deltaJ: float,
+    eps_tail: float = 1e-8,
+    n_max: int = 80,
+) -> float:
     """
     Merton JD via Poisson mixture of B76 prices.
     Compensation k = E[e^Y]-1 = exp(muJ + 0.5*deltaJ^2) - 1
@@ -213,13 +252,16 @@ def merton_price_call_b76(F: float, K: float, tau: float, r: float,
         price += p * b76_price_call(F_n, K, tau, r, sigma_n)
         cum += p
     return float(price)
- 
+
+
 # ============================================================
 # Heston Stochastic Volatility (SV)
 # ============================================================
 
-def _heston_cf(u: np.ndarray, F: float, tau: float,
-               kappa: float, theta: float, sigma_v: float, rho: float, v0: float) -> np.ndarray:
+
+def _heston_cf(
+    u: np.ndarray, F: float, tau: float, kappa: float, theta: float, sigma_v: float, rho: float, v0: float
+) -> np.ndarray:
     """
     Heston characteristic function φ(u) for log-price under forward measure
     (set S0 = F and q = r). Implements the "little Heston trap" form.
@@ -227,12 +269,15 @@ def _heston_cf(u: np.ndarray, F: float, tau: float,
     """
     x = math.log(F)
     iu = 1j * u
-    d = np.sqrt((rho * sigma_v * iu - kappa)**2 + sigma_v**2 * (iu + u*u))
+    d = np.sqrt((rho * sigma_v * iu - kappa) ** 2 + sigma_v**2 * (iu + u * u))
     g = (kappa - rho * sigma_v * iu - d) / (kappa - rho * sigma_v * iu + d)
     exp_dt = np.exp(-d * tau)
-    C = (kappa * theta / (sigma_v**2)) * ((kappa - rho * sigma_v * iu - d) * tau - 2.0 * np.log((1 - g * exp_dt) / (1 - g)))
+    C = (kappa * theta / (sigma_v**2)) * (
+        (kappa - rho * sigma_v * iu - d) * tau - 2.0 * np.log((1 - g * exp_dt) / (1 - g))
+    )
     D = ((kappa - rho * sigma_v * iu - d) / (sigma_v**2)) * ((1 - exp_dt) / (1 - g * exp_dt))
     return np.exp(C + D * v0 + iu * x)
+
 
 def _simpson_integral(fx: np.ndarray, dx: float) -> float:
     """Simpson’s rule; falls back to trapz if <3 points. Ensures odd #points."""
@@ -240,12 +285,15 @@ def _simpson_integral(fx: np.ndarray, dx: float) -> float:
     if n < 3:
         return float(np.trapz(fx, dx=dx))
     if n % 2 == 0:
-        fx = fx[:-1]; n -= 1
+        fx = fx[:-1]
+        n -= 1
     S = fx[0] + fx[-1] + 4.0 * fx[1:-1:2].sum() + 2.0 * fx[2:-2:2].sum()
     return float((dx / 3.0) * S)
 
-def _heston_prob(F: float, K: float, tau: float, params: Dict[str, float],
-                 j: int, u_max: float = 100.0, n_points: int = 501) -> float:
+
+def _heston_prob(
+    F: float, K: float, tau: float, params: Dict[str, float], j: int, u_max: float = 100.0, n_points: int = 501
+) -> float:
     """
     Risk-neutral probabilities P1 (j=1) and P2 (j=2):
       P2 = 1/2 + 1/π ∫_0^∞ Re[ e^{-i u ln K} φ(u) / (i u) ] du
@@ -267,13 +315,16 @@ def _heston_prob(F: float, K: float, tau: float, params: Dict[str, float],
     integral = _simpson_integral(integrand, du)
     return float(0.5 + (1.0 / math.pi) * integral)
 
-def heston_price_call(F: float, K: float, tau: float, r: float, params: Dict[str, float],
-                      u_max: float = 100.0, n_points: int = 501) -> float:
+
+def heston_price_call(
+    F: float, K: float, tau: float, r: float, params: Dict[str, float], u_max: float = 100.0, n_points: int = 501
+) -> float:
     """Heston price via P1/P2 under forward measure."""
     DF = math.exp(-r * tau)
     P1 = _heston_prob(F, K, tau, params, j=1, u_max=u_max, n_points=n_points)
     P2 = _heston_prob(F, K, tau, params, j=2, u_max=u_max, n_points=n_points)
     return DF * (F * P1 - K * P2)
+
 
 # ============================================================
 # Data prep: one day & symbol -> calls with market IVs
@@ -284,10 +335,10 @@ import math
 import numpy as np
 import pandas as pd
 
-def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
-                                 min_parity_pairs: int = 2,
-                                 tau_floor_days: int = 0,
-                                 type: str = 'american') -> Tuple[pd.DataFrame, pd.DataFrame]:
+
+def prepare_calls_one_day_symbol(
+    df_day_symbol: pd.DataFrame, min_parity_pairs: int = 2, tau_floor_days: int = 0, type: str = "american"
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     type='american' : Fast-path. Use provided F/DF/(r); prefer C_eur as market mid if available.
     type='european' : Pair Calls & Puts, infer F/DF via parity (original fallback).
@@ -330,7 +381,7 @@ def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
         df["mid"] = pd.to_numeric(df["mid"], errors="coerce")
 
     # ---- if american fast-path and you have C_eur, use it as market mid ----
-    if type.lower() == 'american' and "C_eur" in df.columns:
+    if type.lower() == "american" and "C_eur" in df.columns:
         df["mid"] = pd.to_numeric(df["C_eur"], errors="coerce")
 
     # ---- cleaning ----
@@ -345,13 +396,13 @@ def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
     # =========================================================================
     # FAST-PATH for 'american': Calls-only, trust supplied F/DF/(r)
     # =========================================================================
-    if type.lower() == 'american':
+    if type.lower() == "american":
         # Keep Calls only (avoid accidentally treating Puts as Calls)
         df = df[df["cp"].str.upper().eq("CALL")]
 
         if not {"F", "DF"}.issubset(df.columns):
             raise ValueError("type='american' expects F and DF columns in the dataset.")
-        df["F"]  = pd.to_numeric(df["F"],  errors="coerce")
+        df["F"] = pd.to_numeric(df["F"], errors="coerce")
         df["DF"] = pd.to_numeric(df["DF"], errors="coerce")
 
         has_r = "r" in df.columns
@@ -365,24 +416,22 @@ def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
         )
 
         # tau per (date,exp) for r derivation if needed
-        tau_hdr = df.groupby(["date", "symbol", "expiration"], as_index=False).agg(
-            tau=("tau", "first")
-        )
+        tau_hdr = df.groupby(["date", "symbol", "expiration"], as_index=False).agg(tau=("tau", "first"))
         hdr = hdr.merge(tau_hdr, on=["date", "symbol", "expiration"], how="left")
 
         if has_r:
-            r_hdr = df.groupby(["date", "symbol", "expiration"], as_index=False).agg(
-                r=("r", "first")
-            )
+            r_hdr = df.groupby(["date", "symbol", "expiration"], as_index=False).agg(r=("r", "first"))
             hdr = hdr.merge(r_hdr, on=["date", "symbol", "expiration"], how="left")
         else:
             hdr["r"] = -np.log(np.clip(hdr["DF"].to_numpy(), 1e-12, None)) / np.maximum(hdr["tau"].to_numpy(), 1e-12)
 
         # calls table shaped like downstream expects (C_mid etc.)
-        calls = (df.groupby(["date", "symbol", "expiration", "tau", "strike"], as_index=False)
-                   .agg(C_mid=("mid", "first")))
-        calls = calls.merge(hdr[["date","symbol","expiration","F","DF","r"]],
-                            on=["date","symbol","expiration"], how="left")
+        calls = df.groupby(["date", "symbol", "expiration", "tau", "strike"], as_index=False).agg(
+            C_mid=("mid", "first")
+        )
+        calls = calls.merge(
+            hdr[["date", "symbol", "expiration", "F", "DF", "r"]], on=["date", "symbol", "expiration"], how="left"
+        )
 
         # market B76 IVs (calls only)
         calls["sigma_mkt_b76"] = calls.apply(
@@ -396,8 +445,7 @@ def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
         calls["bucket"] = calls["tau"].apply(assign_bucket)
 
         # parity_df: simple header + coverage proxy (#strikes)
-        n_pairs = (df.groupby(["date", "symbol", "expiration"])["strike"]
-                     .nunique().rename("n_pairs").reset_index())
+        n_pairs = df.groupby(["date", "symbol", "expiration"])["strike"].nunique().rename("n_pairs").reset_index()
         parity_df = hdr.merge(n_pairs, on=["date", "symbol", "expiration"], how="left")
         parity_df["n_pairs"] = parity_df["n_pairs"].fillna(0).astype(int)
 
@@ -406,9 +454,9 @@ def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
     # =========================================================================
     # 'european' path: Calls–Puts pairing + parity inference (original behavior)
     # =========================================================================
-    pvt = (df.pivot_table(index=["date", "symbol", "expiration", "tau", "strike"],
-                          columns="cp", values="mid", aggfunc="first")
-             .reset_index())
+    pvt = df.pivot_table(
+        index=["date", "symbol", "expiration", "tau", "strike"], columns="cp", values="mid", aggfunc="first"
+    ).reset_index()
     pvt = pvt.rename(columns={"Call": "C_mid", "Put": "P_mid"})
     pairs = pvt.dropna(subset=["C_mid", "P_mid"])
     if pairs.empty:
@@ -429,10 +477,9 @@ def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
         gg = pvt[(pvt["date"] == date) & (pvt["symbol"] == sym) & (pvt["expiration"] == exp)].copy()
         gg["F"], gg["DF"], gg["r"] = F, DF, r
         recs.append(gg)
-        parity_rows.append({
-            "date": date, "symbol": sym, "expiration": exp,
-            "tau": tau, "F": F, "DF": DF, "r": r, "n_pairs": len(g)
-        })
+        parity_rows.append(
+            {"date": date, "symbol": sym, "expiration": exp, "tau": tau, "F": F, "DF": DF, "r": r, "n_pairs": len(g)}
+        )
 
     if not recs:
         return pd.DataFrame(), pd.DataFrame()
@@ -454,39 +501,48 @@ def prepare_calls_one_day_symbol(df_day_symbol: pd.DataFrame,
     parity_df = pd.DataFrame(parity_rows)
     return calls, parity_df
 
+
 # ============================================================
 # Calibration helpers (JD & Heston)
 # ============================================================
+
 
 def _minimize(func, x0, bounds):
     """SciPy L-BFGS-B; fall back to a small local grid around x0 if SciPy missing."""
     if _HAVE_SCIPY:
         res = minimize(func, x0, method="L-BFGS-B", bounds=bounds, options={"maxiter": 200})
-        return (res.x if res.success else x0)
+        return res.x if res.success else x0
     x0 = np.array(x0, dtype=float)
     grids = []
     for (lo, hi), xi in zip(bounds, x0):
-        span = (hi - lo)
-        g = np.linspace(max(lo, xi - 0.2*span), min(hi, xi + 0.2*span), 7)
+        span = hi - lo
+        g = np.linspace(max(lo, xi - 0.2 * span), min(hi, xi + 0.2 * span), 7)
         grids.append(g)
     mesh = np.meshgrid(*grids, indexing="ij")
     cand = np.stack([m.ravel() for m in mesh], axis=1)
     vals = np.array([func(p) for p in cand])
     return cand[int(np.argmin(vals))]
 
+
 def calibrate_jd_bucket(calls_bucket: pd.DataFrame) -> Tuple[Dict[str, float], float]:
     """Fit JD params (sigma, lam, muJ, deltaJ) by price SSE on the bucket cross-section."""
-    if calls_bucket.empty: return {}, np.inf
+    if calls_bucket.empty:
+        return {}, np.inf
     atm_iv = float(np.median(calls_bucket["sigma_mkt_b76"].values))
 
     def sse_vec(p):
         sigma, lam, muJ, dJ = p
-        if sigma <= 0 or lam < 0 or dJ <= 0: return 1e18
-        prices = np.array([
-            merton_price_call_b76(float(r0["F"]), float(r0["strike"]), float(r0["tau"]), float(r0["r"]),
-                                  sigma, lam, muJ, dJ)
-            for _, r0 in calls_bucket.iterrows()
-        ], dtype=float)
+        if sigma <= 0 or lam < 0 or dJ <= 0:
+            return 1e18
+        prices = np.array(
+            [
+                merton_price_call_b76(
+                    float(r0["F"]), float(r0["strike"]), float(r0["tau"]), float(r0["r"]), sigma, lam, muJ, dJ
+                )
+                for _, r0 in calls_bucket.iterrows()
+            ],
+            dtype=float,
+        )
         err = prices - calls_bucket["C_mid"].values
         return float(np.dot(err, err))
 
@@ -497,26 +553,39 @@ def calibrate_jd_bucket(calls_bucket: pd.DataFrame) -> Tuple[Dict[str, float], f
     sse_final = sse_vec([params["sigma"], params["lam"], params["muJ"], params["deltaJ"]])
     return params, sse_final
 
-def calibrate_heston_bucket(calls_bucket: pd.DataFrame,
-                            u_max: float = 100.0, n_points: int = 501) -> Tuple[Dict[str, float], float]:
+
+def calibrate_heston_bucket(
+    calls_bucket: pd.DataFrame, u_max: float = 100.0, n_points: int = 501
+) -> Tuple[Dict[str, float], float]:
     """Fit Heston params (kappa, theta, sigma_v, rho, v0) by price SSE on the bucket cross-section."""
-    if calls_bucket.empty: return {}, np.inf
+    if calls_bucket.empty:
+        return {}, np.inf
     atm_iv = float(np.median(calls_bucket["sigma_mkt_b76"].values))
 
     def sse_vec(p):
         kappa, theta, sigma_v, rho, v0 = p
         if kappa <= 0 or theta <= 0 or sigma_v <= 0 or not (-0.999 <= rho <= 0.0) or v0 <= 0:
             return 1e18
-        params = {"kappa":kappa, "theta":theta, "sigma_v":sigma_v, "rho":rho, "v0":v0}
-        prices = np.array([
-            heston_price_call(float(r0["F"]), float(r0["strike"]), float(r0["tau"]), float(r0["r"]), params,
-                              u_max=u_max, n_points=n_points)
-            for _, r0 in calls_bucket.iterrows()
-        ], dtype=float)
+        params = {"kappa": kappa, "theta": theta, "sigma_v": sigma_v, "rho": rho, "v0": v0}
+        prices = np.array(
+            [
+                heston_price_call(
+                    float(r0["F"]),
+                    float(r0["strike"]),
+                    float(r0["tau"]),
+                    float(r0["r"]),
+                    params,
+                    u_max=u_max,
+                    n_points=n_points,
+                )
+                for _, r0 in calls_bucket.iterrows()
+            ],
+            dtype=float,
+        )
         err = prices - calls_bucket["C_mid"].values
         return float(np.dot(err, err))
 
-    v0_0 = max(1e-4, atm_iv*atm_iv)
+    v0_0 = max(1e-4, atm_iv * atm_iv)
     x0 = np.array([2.0, max(1e-4, v0_0), 0.5, -0.5, v0_0], dtype=float)
     bounds = [(0.05, 10.0), (1e-4, 2.0), (1e-3, 3.0), (-0.999, 0.0), (1e-4, 3.0)]
     p = _minimize(sse_vec, x0, bounds)
@@ -524,21 +593,27 @@ def calibrate_heston_bucket(calls_bucket: pd.DataFrame,
     sse_final = sse_vec([params["kappa"], params["theta"], params["sigma_v"], params["rho"], params["v0"]])
     return params, sse_final
 
+
 # ============================================================
 # IVRMSE bookkeeping
 # ============================================================
 
+
 def _ivrmse_vs_constant_sigma(calls_bucket: pd.DataFrame, sig_hat: float) -> Dict[str, float]:
     """IVRMSE slices when model IV is constant σ̂ across strikes in bucket."""
+
     def rmse(sub: pd.DataFrame) -> float:
-        if len(sub) == 0: return np.nan
-        return float(np.sqrt(np.mean((sub["sigma_mkt_b76"].values - sig_hat)**2)))
+        if len(sub) == 0:
+            return np.nan
+        return float(np.sqrt(np.mean((sub["sigma_mkt_b76"].values - sig_hat) ** 2)))
+
     return {
         "whole": rmse(calls_bucket),
-        "<1":    rmse(calls_bucket[calls_bucket["moneyness_F"] < 1.0]),
-        ">1":    rmse(calls_bucket[calls_bucket["moneyness_F"] > 1.0]),
+        "<1": rmse(calls_bucket[calls_bucket["moneyness_F"] < 1.0]),
+        ">1": rmse(calls_bucket[calls_bucket["moneyness_F"] > 1.0]),
         ">1.03": rmse(calls_bucket[calls_bucket["moneyness_F"] > 1.03]),
     }
+
 
 def _ivrmse_vs_model_prices(calls_bucket: pd.DataFrame, price_fn) -> Dict[str, float]:
     """
@@ -548,9 +623,10 @@ def _ivrmse_vs_model_prices(calls_bucket: pd.DataFrame, price_fn) -> Dict[str, f
     sig_model, keep = [], []
     for _, r0 in calls_bucket.iterrows():
         pm = price_fn(F=float(r0["F"]), K=float(r0["strike"]), tau=float(r0["tau"]), r=float(r0["r"]))
-        s  = b76_iv_from_price(pm, float(r0["F"]), float(r0["strike"]), float(r0["tau"]), float(r0["r"]))
+        s = b76_iv_from_price(pm, float(r0["F"]), float(r0["strike"]), float(r0["tau"]), float(r0["r"]))
         if s is not None:
-            sig_model.append(s); keep.append(True)
+            sig_model.append(s)
+            keep.append(True)
         else:
             keep.append(False)
     if not any(keep):
@@ -559,14 +635,17 @@ def _ivrmse_vs_model_prices(calls_bucket: pd.DataFrame, price_fn) -> Dict[str, f
     cb["sigma_model_b76"] = np.array(sig_model, dtype=float)
 
     def rmse(sub: pd.DataFrame) -> float:
-        if len(sub) == 0: return np.nan
-        return float(np.sqrt(np.mean((sub["sigma_model_b76"].values - sub["sigma_mkt_b76"].values)**2)))
+        if len(sub) == 0:
+            return np.nan
+        return float(np.sqrt(np.mean((sub["sigma_model_b76"].values - sub["sigma_mkt_b76"].values) ** 2)))
+
     return {
         "whole": rmse(cb),
-        "<1":    rmse(cb[cb["moneyness_F"] < 1.0]),
-        ">1":    rmse(cb[cb["moneyness_F"] > 1.0]),
+        "<1": rmse(cb[cb["moneyness_F"] < 1.0]),
+        ">1": rmse(cb[cb["moneyness_F"] > 1.0]),
         ">1.03": rmse(cb[cb["moneyness_F"] > 1.03]),
     }
+
 
 def _pooled_rmse_x1000(block: pd.DataFrame, iv_col: str, weight_col: str = "N") -> float:
     """
@@ -575,16 +654,19 @@ def _pooled_rmse_x1000(block: pd.DataFrame, iv_col: str, weight_col: str = "N") 
     or if total weight is zero.
     """
     import numpy as np
-    x = block[iv_col].to_numpy(dtype=float)           # IVRMSE ×1000 (may contain NaN)
-    w = block[weight_col].to_numpy(dtype=float)       # weights (contract counts)
-    m = np.isfinite(x) & np.isfinite(w) & (w > 0)     # keep only valid pairs
+
+    x = block[iv_col].to_numpy(dtype=float)  # IVRMSE ×1000 (may contain NaN)
+    w = block[weight_col].to_numpy(dtype=float)  # weights (contract counts)
+    m = np.isfinite(x) & np.isfinite(w) & (w > 0)  # keep only valid pairs
     if not m.any():
         return np.nan
-    x_raw = x[m] / 1000.0                             # back to raw RMSE
+    x_raw = x[m] / 1000.0  # back to raw RMSE
     w_use = w[m]
-    return float(np.sqrt((w_use * (x_raw ** 2)).sum() / w_use.sum()) * 1000.0)
+    return float(np.sqrt((w_use * (x_raw**2)).sum() / w_use.sum()) * 1000.0)
+
 
 # Data Preprocessing
+
 
 def adapter_eur_calls_to_summarizer(calls_out: pd.DataFrame) -> pd.DataFrame:
     """
@@ -593,18 +675,18 @@ def adapter_eur_calls_to_summarizer(calls_out: pd.DataFrame) -> pd.DataFrame:
     Output for your summarizer (calls only, no parity step needed):
       date, act_symbol, expiration, strike, cp="Call", bid, ask, mid, F, DF
     """
-    req = {"date","act_symbol","expiration","strike","C_eur","F","DF"}
+    req = {"date", "act_symbol", "expiration", "strike", "C_eur", "F", "DF"}
     missing = req - set(calls_out.columns)
     if missing:
         raise ValueError(f"calls_out is missing required columns: {sorted(missing)}")
 
     df = calls_out.copy()
-    df["date"]       = pd.to_datetime(df["date"]).dt.normalize()
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     df["expiration"] = pd.to_datetime(df["expiration"]).dt.normalize()
 
     # Build calls-only frame
-    calls = df[["date","act_symbol","expiration","strike","C_eur","F","DF"]].copy()
-    calls["cp"]  = "Call"
+    calls = df[["date", "act_symbol", "expiration", "strike", "C_eur", "F", "DF"]].copy()
+    calls["cp"] = "Call"
     calls["mid"] = pd.to_numeric(calls["C_eur"], errors="coerce")
 
     # Bid/ask = mid (keeps ask≥bid>0 filters happy)
@@ -612,20 +694,24 @@ def adapter_eur_calls_to_summarizer(calls_out: pd.DataFrame) -> pd.DataFrame:
     calls["ask"] = calls["mid"]
 
     # Final columns (sorted)
-    calls = (calls[(calls["mid"] > 0) & (calls["ask"] >= calls["bid"])]
-                 [["date","act_symbol","expiration","strike","cp","bid","ask","mid","F","DF"]]
-                 .sort_values(["date","act_symbol","expiration","strike"])
-                 .reset_index(drop=True))
+    calls = (
+        calls[(calls["mid"] > 0) & (calls["ask"] >= calls["bid"])][
+            ["date", "act_symbol", "expiration", "strike", "cp", "bid", "ask", "mid", "F", "DF"]
+        ]
+        .sort_values(["date", "act_symbol", "expiration", "strike"])
+        .reset_index(drop=True)
+    )
     return calls
+
 
 def preprocess_deribit(
     df: pd.DataFrame,
     *,
-    instr_col: str = "instrument_name",      # e.g. "BTC-26DEC25-144000-C"
-    ts_col: str = "creation_timestamp",      # ms since epoch (UTC)
-    spot_col: str = "underlying_price",      # USD per BTC
-    bid_btc_col: str = "bid_price",          # bid quoted in BTC
-    ask_btc_col: str = "ask_price"           # ask quoted in BTC
+    instr_col: str = "instrument_name",  # e.g. "BTC-26DEC25-144000-C"
+    ts_col: str = "creation_timestamp",  # ms since epoch (UTC)
+    spot_col: str = "underlying_price",  # USD per BTC
+    bid_btc_col: str = "bid_price",  # bid quoted in BTC
+    ask_btc_col: str = "ask_price",  # ask quoted in BTC
 ) -> pd.DataFrame:
     """
     Minimal mapper for your summarizer. Outputs exactly the columns it expects:
@@ -637,8 +723,9 @@ def preprocess_deribit(
     - cp: "Call"/"Put"
     - bid/ask/mid: USD premiums = BTC quote × underlying_price
     """
+
     def _parse(name: str):
-        m = re.match(r'^([A-Z]+)-(\d{2}[A-Z]{3}\d{2})-([0-9]+)-(C|P)$', str(name).strip())
+        m = re.match(r"^([A-Z]+)-(\d{2}[A-Z]{3}\d{2})-([0-9]+)-(C|P)$", str(name).strip())
         if not m:
             return None
         sym, exp_s, k_s, cp = m.groups()
@@ -660,31 +747,31 @@ def preprocess_deribit(
     base = df.loc[ok].copy()
     sym, exp, k, cp_full = zip(*parsed[ok])
     # base["symbol"]      = list(sym)
-    base["act_symbol"]  = list(sym)
-    base["expiration"]  = list(exp)
-    base["strike"]      = list(k)
-    base["cp"]          = list(cp_full)
+    base["act_symbol"] = list(sym)
+    base["expiration"] = list(exp)
+    base["strike"] = list(k)
+    base["cp"] = list(cp_full)
 
     # Observation date from real timestamp (UTC → naive date)
-    base["date"] = pd.to_datetime(base[ts_col], unit="ms", utc=True)\
-                        .dt.tz_convert(None).dt.date
+    base["date"] = pd.to_datetime(base[ts_col], unit="ms", utc=True).dt.tz_convert(None).dt.date
 
     # BTC-quoted → USD premiums
     spot = pd.to_numeric(base[spot_col], errors="coerce")
-    bid  = pd.to_numeric(base[bid_btc_col], errors="coerce") * spot
-    ask  = pd.to_numeric(base[ask_btc_col], errors="coerce") * spot
-    mid  = (bid + ask) / 2.0
+    bid = pd.to_numeric(base[bid_btc_col], errors="coerce") * spot
+    ask = pd.to_numeric(base[ask_btc_col], errors="coerce") * spot
+    mid = (bid + ask) / 2.0
 
     # Minimal cleaning
     keep = (bid > 0) & (ask > 0) & (ask >= bid)
-    base = base.loc[keep, ["date","act_symbol","expiration","strike","cp"]].copy()
+    base = base.loc[keep, ["date", "act_symbol", "expiration", "strike", "cp"]].copy()
     base["bid"] = bid.loc[base.index].values
     base["ask"] = ask.loc[base.index].values
     base["mid"] = mid.loc[base.index].values
 
     # Sorted output
-    out = base.sort_values(["date","act_symbol","expiration","strike","cp"]).reset_index(drop=True)
+    out = base.sort_values(["date", "act_symbol", "expiration", "strike", "cp"]).reset_index(drop=True)
     return out
+
 
 def _predict_model_prices(g: pd.DataFrame, price_fn, model_tag: str, bucket_label: str) -> pd.DataFrame:
     """
@@ -692,29 +779,51 @@ def _predict_model_prices(g: pd.DataFrame, price_fn, model_tag: str, bucket_labe
     Keeps: date, symbol, expiration, tau, bucket, strike, market (C_mid),
            sigma_mkt_b76, F, DF, r, moneyness_F, and adds: price_hat, model.
     """
-    h = g[["date","symbol","expiration","tau","strike","C_mid","sigma_mkt_b76","F","DF","r","moneyness_F"]].copy()
+    h = g[
+        ["date", "symbol", "expiration", "tau", "strike", "C_mid", "sigma_mkt_b76", "F", "DF", "r", "moneyness_F"]
+    ].copy()
     h["bucket"] = bucket_label
     h["price_hat"] = [price_fn(F, K, tau, r) for F, K, tau, r in zip(h["F"], h["strike"], h["tau"], h["r"])]
     h["model"] = model_tag
-    return h[["date","symbol","expiration","tau","bucket","strike","C_mid","price_hat",
-              "sigma_mkt_b76","F","DF","r","moneyness_F","model"]]
+    return h[
+        [
+            "date",
+            "symbol",
+            "expiration",
+            "tau",
+            "bucket",
+            "strike",
+            "C_mid",
+            "price_hat",
+            "sigma_mkt_b76",
+            "F",
+            "DF",
+            "r",
+            "moneyness_F",
+            "model",
+        ]
+    ]
+
 
 # ============================================================
 # Main entry: summarize symbol over a period with saving
 # ============================================================
+
 
 def summarize_symbol_period_ivrmse(
     df_all: pd.DataFrame,
     symbol: str = "SPY",
     type: str = "american",
     start_date: str = "2025-04-01",
-    end_date:   str = "2025-06-30",
+    end_date: str = "2025-06-30",
     buckets: List[int] = [14, 28, 56],
     min_parity_pairs: int = 4,
     tau_floor_days: int = 3,
     run_bs: bool = True,
     run_jd: bool = True,
     run_heston: bool = True,
+    run_qlbs: bool = False,
+    run_rlop: bool = False,
     show_progress: bool = True,
     print_daily: bool = True,
     out_dir: Optional[str] = None,
@@ -725,11 +834,11 @@ def summarize_symbol_period_ivrmse(
       • Secondary= pooled/N-weighted IVRMSE (every contract counts)
     Saves: daily table, equal_day_mean, pooled, and a daily log (one line/day).
     """
-    if type=='american':
+    if type == "american":
         df_pre = adapter_eur_calls_to_summarizer(df_all)
     else:
         df_pre = preprocess_deribit(df_all)
-    
+
     # Output folder & run config
     outp = None
     log_fp = None
@@ -741,20 +850,22 @@ def summarize_symbol_period_ivrmse(
             f"symbol={symbol}\\nperiod={start_date}..{end_date}\\n"
             f"buckets={buckets}\\nmin_parity_pairs={min_parity_pairs}\\n"
             f"tau_floor_days={tau_floor_days}\\nrun_bs={run_bs} run_jd={run_jd} run_heston={run_heston}\\n",
-            encoding="utf-8"
+            encoding="utf-8",
         )
 
     # Filter to symbol & period
     df = df_pre.copy()
     sym_col = "act_symbol" if "act_symbol" in df.columns else "symbol"
     if sym_col not in df.columns:
-        if log_fp: log_fp.close()
+        if log_fp:
+            log_fp.close()
         raise ValueError("Expected 'act_symbol' or 'symbol' in DataFrame.")
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     mask = (df[sym_col] == symbol) & (df["date"] >= pd.Timestamp(start_date)) & (df["date"] <= pd.Timestamp(end_date))
     df = df.loc[mask].copy()
     if df.empty:
-        if log_fp: log_fp.close()
+        if log_fp:
+            log_fp.close()
         raise ValueError(f"No rows for {symbol} in [{start_date}, {end_date}].")
 
     # Bucket mapper using requested centers
@@ -769,6 +880,7 @@ def summarize_symbol_period_ivrmse(
     if show_progress:
         try:
             from tqdm.auto import tqdm
+
             iterator = tqdm(days, desc=f"{symbol} {pd.Timestamp(start_date).date()}→{pd.Timestamp(end_date).date()}")
         except Exception:
             pass
@@ -778,12 +890,16 @@ def summarize_symbol_period_ivrmse(
 
     for day in iterator:
         df_day = df[df["date"] == day]
-        calls, _ = prepare_calls_one_day_symbol(df_day, min_parity_pairs=min_parity_pairs, tau_floor_days=tau_floor_days, type=type)
+        calls, _ = prepare_calls_one_day_symbol(
+            df_day, min_parity_pairs=min_parity_pairs, tau_floor_days=tau_floor_days, type=type
+        )
         # print(calls)
         if calls.empty:
             msg = f"[{pd.Timestamp(day).date()}] no valid pairs/contracts after filters"
-            if print_daily: print(msg)
-            if log_fp: print(msg, file=log_fp)
+            if print_daily:
+                print(msg)
+            if log_fp:
+                print(msg, file=log_fp)
             continue
 
         calls["bucket"] = calls["tau"].apply(assign_bucket_centers)
@@ -795,54 +911,244 @@ def summarize_symbol_period_ivrmse(
             # BS/B76 baseline (1-σ)
             if run_bs:
                 sig_hat = fit_sigma_bucket(g)
-                def bs_price(F,K,tau,r):   # priced with fitted sigma
+
+                def bs_price(F, K, tau, r):  # priced with fitted sigma
                     return b76_price_call(F, K, tau, r, sig_hat)
+
                 ivs = _ivrmse_vs_constant_sigma(g, sig_hat)
-                row.update({
-                    "BS_IVRMSE_x1000_Whole":  ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
-                    "BS_IVRMSE_x1000_<1":     ivs["<1"]    * 1000 if np.isfinite(ivs["<1"])    else np.nan,
-                    "BS_IVRMSE_x1000_>1":     ivs[">1"]    * 1000 if np.isfinite(ivs[">1"])    else np.nan,
-                    "BS_IVRMSE_x1000_>1.03":  ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
-                })
+                row.update(
+                    {
+                        "BS_IVRMSE_x1000_Whole": ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
+                        "BS_IVRMSE_x1000_<1": ivs["<1"] * 1000 if np.isfinite(ivs["<1"]) else np.nan,
+                        "BS_IVRMSE_x1000_>1": ivs[">1"] * 1000 if np.isfinite(ivs[">1"]) else np.nan,
+                        "BS_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
+                    }
+                )
                 # NEW: stash BS per-row predictions
                 preds_rows.append(_predict_model_prices(g, bs_price, "BS", bucket))
 
             # JD baseline
             if run_jd:
                 jd_params, _ = calibrate_jd_bucket(g)
-                def jd_price(F,K,tau,r):
-                    return merton_price_call_b76(F,K,tau,r, jd_params["sigma"], jd_params["lam"], jd_params["muJ"], jd_params["deltaJ"])
+
+                def jd_price(F, K, tau, r):
+                    return merton_price_call_b76(
+                        F, K, tau, r, jd_params["sigma"], jd_params["lam"], jd_params["muJ"], jd_params["deltaJ"]
+                    )
+
                 ivs = _ivrmse_vs_model_prices(g, jd_price)
-                row.update({
-                    "JD_IVRMSE_x1000_Whole":  ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
-                    "JD_IVRMSE_x1000_<1":     ivs["<1"]    * 1000 if np.isfinite(ivs["<1"])    else np.nan,
-                    "JD_IVRMSE_x1000_>1":     ivs[">1"]    * 1000 if np.isfinite(ivs[">1"])    else np.nan,
-                    "JD_IVRMSE_x1000_>1.03":  ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
-                })
+                row.update(
+                    {
+                        "JD_IVRMSE_x1000_Whole": ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
+                        "JD_IVRMSE_x1000_<1": ivs["<1"] * 1000 if np.isfinite(ivs["<1"]) else np.nan,
+                        "JD_IVRMSE_x1000_>1": ivs[">1"] * 1000 if np.isfinite(ivs[">1"]) else np.nan,
+                        "JD_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
+                    }
+                )
                 # NEW: stash JD per-row predictions
                 preds_rows.append(_predict_model_prices(g, jd_price, "JD", bucket))
 
             # Heston baseline
             if run_heston:
                 h_params, _ = calibrate_heston_bucket(g, u_max=100.0, n_points=501)  # stable Simpson settings
-                def h_price(F,K,tau,r):
-                    return heston_price_call(F,K,tau,r, h_params, u_max=100.0, n_points=501)
+
+                def h_price(F, K, tau, r):
+                    return heston_price_call(F, K, tau, r, h_params, u_max=100.0, n_points=501)
+
                 ivs = _ivrmse_vs_model_prices(g, h_price)
-                row.update({
-                    "Heston_IVRMSE_x1000_Whole":  ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
-                    "Heston_IVRMSE_x1000_<1":     ivs["<1"]    * 1000 if np.isfinite(ivs["<1"])    else np.nan,
-                    "Heston_IVRMSE_x1000_>1":     ivs[">1"]    * 1000 if np.isfinite(ivs[">1"])    else np.nan,
-                    "Heston_IVRMSE_x1000_>1.03":  ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
-                })
+                row.update(
+                    {
+                        "Heston_IVRMSE_x1000_Whole": ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
+                        "Heston_IVRMSE_x1000_<1": ivs["<1"] * 1000 if np.isfinite(ivs["<1"]) else np.nan,
+                        "Heston_IVRMSE_x1000_>1": ivs[">1"] * 1000 if np.isfinite(ivs[">1"]) else np.nan,
+                        "Heston_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
+                    }
+                )
                 # NEW: stash SV per-row predictions
                 preds_rows.append(_predict_model_prices(g, h_price, "SV", bucket))
+
+            # QLBS model
+            ##########################################################################
+            # NOTE: this part is the new QLBS model
+            ##########################################################################
+            if run_qlbs:
+                from lib.qlbs2.test_trained_model import QLBSModel
+
+                risk_lambda = 0.01
+                Qmodel = QLBSModel(
+                    is_call_option=True,
+                    checkpoint=f"trained_model/test8/risk_lambda={risk_lambda:.1e}/policy_1.pt",
+                    anchor_T=28 / 252,
+                )
+                # spot = (g["F"] * np.exp(-g["r"] * g["tau"])).iloc[0]
+                spot = g["F"].iloc[0]
+                time_to_expiries = g["tau"].to_numpy()
+                strikes = g["strike"].to_numpy()
+                r = g["r"].iloc[0]
+                friction = 4e-3
+                observed_prices = g["C_mid"].to_numpy()
+
+                moneyness = np.log(g["strike"] / g["F"]) / (np.sqrt(g["tau"]) * 0.2)
+                inv_price = 1 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
+
+                try:
+                    result = Qmodel.fit(
+                        spot=spot,
+                        time_to_expiries=time_to_expiries,
+                        strikes=strikes,
+                        r=r,
+                        risk_lambda=risk_lambda,
+                        friction=friction,
+                        observed_prices=observed_prices,
+                        ##########################################################################
+                        # NOTE: different combinations of weights, can try which is best
+                        ##########################################################################
+                        # weights=inv_price * np.exp(-(moneyness.to_numpy() ** 2) * 0.5),
+                        weights=inv_price,
+                        # weights=np.exp(-(moneyness.to_numpy() ** 2) * 0.5),
+                        ##########################################################################
+                        sigma_guess=0.3,
+                        mu_guess=0,
+                        n_epochs=2000,
+                    )
+                    # import pdb
+                    # pdb.set_trace()
+                    # fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+                    # for tau, _df in g.groupby("tau"):
+                    #     print(tau)
+                    #     axs[0].plot(_df["strike"], _df["C_mid"], label=f"Observed {tau}")
+                    #     _indices = np.where(np.isclose(time_to_expiries, tau))[0]
+                    #     axs[0].plot(
+                    #         _df["strike"], result.estimated_prices[_indices], label=f"Model {tau}", linestyle="--"
+                    #     )
+                    # plt.legend()
+                    # plt.show()
+                    # if result.sigma > 3:
+                    #     import pdb
+                    #     pdb.set_trace()
+
+                    def qlbs_price(F, K, tau, r):
+                        _result = Qmodel.predict(
+                            spot=F,
+                            time_to_expiries=np.array([tau]),
+                            strikes=np.array([K]),
+                            r=r,
+                            risk_lambda=risk_lambda,
+                            friction=friction,
+                            sigma_fit=result.sigma,
+                            mu_fit=result.mu,
+                        )
+                        return _result.estimated_prices[0]
+
+                    ivs = _ivrmse_vs_model_prices(g, qlbs_price)
+                except KeyboardInterrupt:
+                    ivs = {"whole": np.nan, "<1": np.nan, ">1": np.nan, ">1.03": np.nan}
+                row.update(
+                    {
+                        "QLBS_IVRMSE_x1000_Whole": ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
+                        "QLBS_IVRMSE_x1000_<1": ivs["<1"] * 1000 if np.isfinite(ivs["<1"]) else np.nan,
+                        "QLBS_IVRMSE_x1000_>1": ivs[">1"] * 1000 if np.isfinite(ivs[">1"]) else np.nan,
+                        "QLBS_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
+                    }
+                )
+
+                ##########################################################################
+
+            # RLOP model
+            ##########################################################################
+            # NOTE: this part is the new RLOP model
+            ##########################################################################
+            if run_rlop:
+                from lib.rlop2.test_trained_model import RLOPModel
+
+                Rmodel = RLOPModel(
+                    is_call_option=True,
+                    checkpoint="trained_model/testr9/policy_1.pt",
+                    anchor_T=28 / 252,
+                )
+                # spot = (g["F"] * np.exp(-g["r"] * g["tau"])).iloc[0]
+                spot = g["F"].iloc[0]
+                time_to_expiries = g["tau"].to_numpy()
+                strikes = g["strike"].to_numpy()
+                r = g["r"].iloc[0]
+                risk_lambda = 0.1
+                friction = 4e-3
+                observed_prices = g["C_mid"].to_numpy()
+
+                moneyness = np.log(g["strike"] / g["F"]) / (np.sqrt(g["tau"]) * 0.2)
+                inv_price = 1 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
+
+                try:
+                    result = Rmodel.fit(
+                        spot=spot,
+                        time_to_expiries=time_to_expiries,
+                        strikes=strikes,
+                        r=r,
+                        risk_lambda=risk_lambda,
+                        friction=friction,
+                        observed_prices=observed_prices,
+                        ##########################################################################
+                        # NOTE: different combinations of weights, can try which is best
+                        ##########################################################################
+                        # weights=inv_price * np.exp(-(moneyness.to_numpy() ** 2) * 0.5),
+                        weights=inv_price,
+                        # weights=np.exp(-(moneyness.to_numpy() ** 2) * 0.5),
+                        ##########################################################################
+                        sigma_guess=0.3,
+                        mu_guess=0,
+                        n_epochs=2000,
+                    )
+                    # import pdb
+                    # pdb.set_trace()
+                    # fig, axs = plt.subplots(1, 2, figsize=(10, 4))
+                    # for tau, _df in g.groupby("tau"):
+                    #     print(tau)
+                    #     axs[0].plot(_df["strike"], _df["C_mid"], label=f"Observed {tau}")
+                    #     _indices = np.where(np.isclose(time_to_expiries, tau))[0]
+                    #     axs[0].plot(
+                    #         _df["strike"], result.estimated_prices[_indices], label=f"Model {tau}", linestyle="--"
+                    #     )
+                    # plt.legend()
+                    # plt.show()
+                    # if result.sigma > 3:
+                    #     import pdb
+                    #     pdb.set_trace()
+
+                    def rlop_price(F, K, tau, r):
+                        _result = Rmodel.predict(
+                            spot=F,
+                            time_to_expiries=np.array([tau]),
+                            strikes=np.array([K]),
+                            r=r,
+                            risk_lambda=risk_lambda,
+                            friction=friction,
+                            sigma_fit=result.sigma,
+                            mu_fit=result.mu,
+                        )
+                        return _result.estimated_prices[0]
+
+                    ivs = _ivrmse_vs_model_prices(g, rlop_price)
+                except KeyboardInterrupt:
+                    ivs = {"whole": np.nan, "<1": np.nan, ">1": np.nan, ">1.03": np.nan}
+                row.update(
+                    {
+                        "RLOP_IVRMSE_x1000_Whole": ivs["whole"] * 1000 if np.isfinite(ivs["whole"]) else np.nan,
+                        "RLOP_IVRMSE_x1000_<1": ivs["<1"] * 1000 if np.isfinite(ivs["<1"]) else np.nan,
+                        "RLOP_IVRMSE_x1000_>1": ivs[">1"] * 1000 if np.isfinite(ivs[">1"]) else np.nan,
+                        "RLOP_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
+                    }
+                )
+
+                ##########################################################################
 
             day_rows.append(row)
 
         if not day_rows:
             msg = f"[{pd.Timestamp(day).date()}] no valid buckets"
-            if print_daily: print(msg)
-            if log_fp: print(msg, file=log_fp)
+            if print_daily:
+                print(msg)
+            if log_fp:
+                print(msg, file=log_fp)
             continue
 
         daily_rows.extend(day_rows)
@@ -850,17 +1156,24 @@ def summarize_symbol_period_ivrmse(
         # One compact line per day — pooled across buckets (Whole slice only)
         msg_parts = []
         day_df = pd.DataFrame(day_rows)
-        for model, col in [("BS", "BS_IVRMSE_x1000_Whole"),
-                           ("JD", "JD_IVRMSE_x1000_Whole"),
-                           ("Heston", "Heston_IVRMSE_x1000_Whole")]:
+        for model, col in [
+            ("BS", "BS_IVRMSE_x1000_Whole"),
+            ("JD", "JD_IVRMSE_x1000_Whole"),
+            ("Heston", "Heston_IVRMSE_x1000_Whole"),
+            ("QLBS", "QLBS_IVRMSE_x1000_Whole"),
+            ("RLOP", "RLOP_IVRMSE_x1000_Whole"),
+        ]:
             if col in day_df.columns:
                 pooled = _pooled_rmse_x1000(day_df[["N", col]].rename(columns={col: "val"}), "val")
-                msg_parts.append(f"{model}={round(float(pooled),1) if pd.notna(pooled) else 'NA'}")
+                msg_parts.append(f"{model}={round(float(pooled), 1) if pd.notna(pooled) else 'NA'}")
         msg = f"[{pd.Timestamp(day).date()}] pooled Whole x1000: " + ", ".join(msg_parts)
-        if print_daily: print(msg)
-        if log_fp: print(msg, file=log_fp)
+        if print_daily:
+            print(msg)
+        if log_fp:
+            print(msg, file=log_fp)
 
-    if log_fp: log_fp.close()
+    if log_fp:
+        log_fp.close()
 
     if not daily_rows:
         raise RuntimeError("No valid (day,bucket) rows — check filters or min_parity_pairs/tau_floor_days.")
@@ -868,17 +1181,19 @@ def summarize_symbol_period_ivrmse(
     daily = pd.DataFrame(daily_rows)
 
     # ---- Primary: equal-day mean per bucket (each day counts once) ----
-    iv_cols = [c for c in daily.columns if c.endswith("_IVRMSE_x1000_Whole")
-                                     or c.endswith("_IVRMSE_x1000_<1")
-                                     or c.endswith("_IVRMSE_x1000_>1")
-                                     or c.endswith("_IVRMSE_x1000_>1.03")]
-    equal_day_mean = (daily.groupby("bucket", as_index=False)[iv_cols].mean())
+    iv_cols = [
+        c
+        for c in daily.columns
+        if c.endswith("_IVRMSE_x1000_Whole")
+        or c.endswith("_IVRMSE_x1000_<1")
+        or c.endswith("_IVRMSE_x1000_>1")
+        or c.endswith("_IVRMSE_x1000_>1.03")
+    ]
+    equal_day_mean = daily.groupby("bucket", as_index=False)[iv_cols].mean()
     # Coverage diagnostics
     days_used = daily.groupby("bucket")["date"].nunique().rename("days_used").reset_index()
-    N_total   = daily.groupby("bucket")["N"].sum().rename("N_total").reset_index()
-    equal_day_mean = (equal_day_mean.merge(days_used, on="bucket")
-                                   .merge(N_total, on="bucket")
-                                   .sort_values("bucket"))
+    N_total = daily.groupby("bucket")["N"].sum().rename("N_total").reset_index()
+    equal_day_mean = equal_day_mean.merge(days_used, on="bucket").merge(N_total, on="bucket").sort_values("bucket")
 
     # ---- Secondary: pooled/N-weighted per bucket ----
     pooled_rows = []
@@ -895,38 +1210,62 @@ def summarize_symbol_period_ivrmse(
         equal_day_mean.to_csv(outp / "equal_day_mean.csv", index=False)
         pooled.to_csv(outp / "pooled.csv", index=False)
 
+    print(f"========================{outp=}")
     # ---- Save per-option predictions (long + wide) ----
     if outp is not None and len(preds_rows) > 0:
         preds_all = pd.concat(preds_rows, ignore_index=True)
 
-        keys = ["date","symbol","expiration","tau","bucket","strike",
-                "C_mid","sigma_mkt_b76","F","DF","r","moneyness_F"]
-        preds_wide = (preds_all
-                      .pivot_table(index=keys, columns="model",
-                                   values="price_hat", aggfunc="first")
-                      .reset_index())
+        keys = [
+            "date",
+            "symbol",
+            "expiration",
+            "tau",
+            "bucket",
+            "strike",
+            "C_mid",
+            "sigma_mkt_b76",
+            "F",
+            "DF",
+            "r",
+            "moneyness_F",
+        ]
+        preds_wide = preds_all.pivot_table(
+            index=keys, columns="model", values="price_hat", aggfunc="first"
+        ).reset_index()
         # Make column names friendly: BS→price_BS, JD→price_JD, SV→price_SV
-        if "BS" in preds_wide.columns: preds_wide = preds_wide.rename(columns={"BS":"price_BS"})
-        if "JD" in preds_wide.columns: preds_wide = preds_wide.rename(columns={"JD":"price_JD"})
-        if "SV" in preds_wide.columns: preds_wide = preds_wide.rename(columns={"SV":"price_SV"})
+        if "BS" in preds_wide.columns:
+            preds_wide = preds_wide.rename(columns={"BS": "price_BS"})
+        if "JD" in preds_wide.columns:
+            preds_wide = preds_wide.rename(columns={"JD": "price_JD"})
+        if "SV" in preds_wide.columns:
+            preds_wide = preds_wide.rename(columns={"SV": "price_SV"})
 
         preds_wide_fp = outp / "predicted_prices_wide.csv"
         preds_wide.to_csv(preds_wide_fp, index=False)
         print(f"Saved: {preds_wide_fp}")
 
-    return {"daily": daily, "equal_day_mean": equal_day_mean, "pooled": pooled}
+    res = {"daily": daily, "equal_day_mean": equal_day_mean, "pooled": pooled}
+    if outp is not None:
+        with open(outp / "summary_res.pkl", "wb") as f:
+            pickle.dump(res, f)
+
+    return res
+
 
 # ============================================================
 # Publication-style table (CSV + Markdown with bold minima)
 # ============================================================
 
-def make_publication_table(res: Dict[str, pd.DataFrame],
-                           symbol: str = "SPY",
-                           measure: str = "equal",          # "equal" (primary) or "pooled" (secondary)
-                           buckets: List[int] = (14, 28, 56),
-                           decimals: int = 2,
-                           out_dir: Optional[str] = None,
-                           basename: str = "table_ivrmse") -> pd.DataFrame:
+
+def make_publication_table(
+    res: Dict[str, pd.DataFrame],
+    symbol: str = "SPY",
+    measure: str = "equal",  # "equal" (primary) or "pooled" (secondary)
+    buckets: List[int] = (14, 28, 56),
+    decimals: int = 2,
+    out_dir: Optional[str] = None,
+    basename: str = "table_ivrmse",
+) -> pd.DataFrame:
     """
     Build a paper-style table matching the reference format:
       Sections: Whole sample / Moneyness <1 / >1 / >1.03
@@ -942,14 +1281,14 @@ def make_publication_table(res: Dict[str, pd.DataFrame],
         raise ValueError("Source summary is empty.")
 
     present = set(df_src.columns)
-    models = [m for m, prefix in [("BS","BS"), ("JD","JD"), ("SV","Heston")]
-              if any(col.startswith(f"{prefix}_IVRMSE_x1000") for col in present)]
-    model_to_prefix = {"BS":"BS", "JD":"JD", "SV":"Heston"}
+    models = [
+        m
+        for m, prefix in [("BS", "BS"), ("JD", "JD"), ("SV", "Heston"), ("QLBS", "QLBS"), ("RLOP", "RLOP")]
+        if any(col.startswith(f"{prefix}_IVRMSE_x1000") for col in present)
+    ]
+    model_to_prefix = {"BS": "BS", "JD": "JD", "SV": "Heston", "QLBS": "QLBS", "RLOP": "RLOP"}
 
-    sections = [("Whole sample", "Whole"),
-                ("Moneyness <1", "<1"),
-                ("Moneyness >1", ">1"),
-                ("Moneyness >1.03", ">1.03")]
+    sections = [("Whole sample", "Whole"), ("Moneyness <1", "<1"), ("Moneyness >1", ">1"), ("Moneyness >1.03", ">1.03")]
     bucket_labels = [f"{d}d" for d in buckets]
 
     rows = []
@@ -958,7 +1297,8 @@ def make_publication_table(res: Dict[str, pd.DataFrame],
             row = {"Moneyness": section_name, "Asset": f"{symbol} (τ={d})"}
             sub = df_src[df_src["bucket"] == d]
             if sub.empty:
-                for m in models: row[m] = np.nan
+                for m in models:
+                    row[m] = np.nan
             else:
                 for m in models:
                     prefix = model_to_prefix[m]
@@ -971,7 +1311,8 @@ def make_publication_table(res: Dict[str, pd.DataFrame],
         table[m] = table[m].round(decimals)
 
     if out_dir:
-        outp = Path(out_dir); outp.mkdir(parents=True, exist_ok=True)
+        outp = Path(out_dir)
+        outp.mkdir(parents=True, exist_ok=True)
         csv_path = outp / f"{basename}_{measure}.csv"
         table.to_csv(csv_path, index=False)
 
@@ -979,10 +1320,10 @@ def make_publication_table(res: Dict[str, pd.DataFrame],
         md_rows = []
         header = ["Moneyness", "Asset"] + models
         md_rows.append("| " + " | ".join(header) + " |")
-        md_rows.append("| " + " | ".join(["---"]*len(header)) + " |")
+        md_rows.append("| " + " | ".join(["---"] * len(header)) + " |")
         for _, r in table.iterrows():
             vals = [r[m] for m in models]
-            not_nan = [i for i,v in enumerate(vals) if pd.notna(v)]
+            not_nan = [i for i, v in enumerate(vals) if pd.notna(v)]
             best_idx = None
             if not_nan:
                 best_idx = min(not_nan, key=lambda i: vals[i])
@@ -1003,78 +1344,162 @@ def make_publication_table(res: Dict[str, pd.DataFrame],
 
     return table
 
-df = pd.read_csv("SPY_preproc_25/spy_preprocessed_calls_25.csv")
-# df_pre = adapter_eur_calls_to_summarizer(df)
-# df_pre.head()
 
-res = summarize_symbol_period_ivrmse(
-    df_all=df,
-    symbol="SPY",
-    type='american',
-    start_date="2025-04-01",
-    end_date="2025-06-30",
-    buckets=[14,28,56],
-    min_parity_pairs=4,
-    tau_floor_days=3,
-    run_bs=True, run_jd=True, run_heston=True,
-    show_progress=True,
-    print_daily=True,
-    out_dir="SPY_25Q2_baseline_v3"      # outputs saved here
-)
+def main_spy20():
+    df = pd.read_csv("data/spy_preprocessed_calls_20q1.csv")
+    # df_pre = adapter_eur_calls_to_summarizer(df)
+    # df_pre.head()
 
-# PRIMARY (paper): equal-day mean table
-tbl_equal = make_publication_table(res, symbol="SPY",
-                                   measure="equal",
-                                   buckets=[14,28,56],
-                                   decimals=2,
-                                   out_dir="SPY_25Q2_baseline_v3",
-                                   basename="table_ivrmse")
+    res = summarize_symbol_period_ivrmse(
+        df_all=df,
+        symbol="SPY",
+        type="american",
+        start_date="2020-01-06",
+        end_date="2020-03-30",
+        buckets=[14, 28, 56],
+        min_parity_pairs=4,
+        tau_floor_days=3,
+        run_bs=True,
+        run_jd=True,
+        run_heston=True,
+        run_qlbs=True,
+        run_rlop=True,
+        show_progress=True,
+        print_daily=True,
+        out_dir="SPY_20Q1_baseline_v3",  # outputs saved here
+    )
 
-# SECONDARY (robustness): pooled table
-tbl_pooled = make_publication_table(res, symbol="SPY",
-                                    measure="pooled",
-                                    buckets=[14,28,56],
-                                    decimals=2,
-                                    out_dir="SPY_25Q2_baseline_v3",
-                                    basename="table_ivrmse")
+    # PRIMARY (paper): equal-day mean table
+    tbl_equal = make_publication_table(
+        res,
+        symbol="SPY",
+        measure="equal",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="SPY_20Q1_baseline_v3",
+        basename="table_ivrmse",
+    )
 
-print(tbl_equal)
-print(tbl_pooled)
+    # SECONDARY (robustness): pooled table
+    tbl_pooled = make_publication_table(
+        res,
+        symbol="SPY",
+        measure="pooled",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="SPY_20Q1_baseline_v3",
+        basename="table_ivrmse",
+    )
 
-df = pd.read_csv("./BTC_E_Options_09NOV25.csv")
-# df_pre = preprocess_deribit(df)
-# df_pre.head()
+    print(tbl_equal)
+    print(tbl_pooled)
 
-res = summarize_symbol_period_ivrmse(
-    df_all=df,
-    symbol="BTC",
-    type='european',
-    start_date="2025-11-09",
-    end_date="2025-11-09",
-    buckets=[7,30,90],
-    min_parity_pairs=4,
-    tau_floor_days=3,
-    run_bs=True, run_jd=True, run_heston=True,
-    show_progress=True,
-    print_daily=True,
-    out_dir="BTC_09NOV25_v3"      # outputs saved here
-)
 
-# PRIMARY (paper): equal-day mean table
-tbl_equal = make_publication_table(res, symbol="BTC",
-                                   measure="equal",
-                                   buckets=[7,30,90],
-                                   decimals=2,
-                                   out_dir="BTC_09NOV25_v3",
-                                   basename="table_ivrmse")
+def main_spy25():
+    df = pd.read_csv("data/spy_preprocessed_calls_25.csv")
+    # df_pre = adapter_eur_calls_to_summarizer(df)
+    # df_pre.head()
 
-# SECONDARY (robustness): pooled table
-tbl_pooled = make_publication_table(res, symbol="BTC",
-                                    measure="pooled",
-                                    buckets=[7,30,90],
-                                    decimals=2,
-                                    out_dir="BTC_09NOV25_v3",
-                                    basename="table_ivrmse")
+    res = summarize_symbol_period_ivrmse(
+        df_all=df,
+        symbol="SPY",
+        type="american",
+        start_date="2025-04-01",
+        end_date="2025-06-30",
+        buckets=[14, 28, 56],
+        min_parity_pairs=4,
+        tau_floor_days=3,
+        run_bs=True,
+        run_jd=True,
+        run_heston=True,
+        run_qlbs=True,
+        run_rlop=True,
+        show_progress=True,
+        print_daily=True,
+        out_dir="SPY_25Q2_baseline_v3",  # outputs saved here
+    )
 
-print(tbl_equal)
-print(tbl_pooled)
+    # PRIMARY (paper): equal-day mean table
+    tbl_equal = make_publication_table(
+        res,
+        symbol="SPY",
+        measure="equal",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="SPY_25Q2_baseline_v3",
+        basename="table_ivrmse",
+    )
+
+    # SECONDARY (robustness): pooled table
+    tbl_pooled = make_publication_table(
+        res,
+        symbol="SPY",
+        measure="pooled",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="SPY_25Q2_baseline_v3",
+        basename="table_ivrmse",
+    )
+
+    print(tbl_equal)
+    print(tbl_pooled)
+
+
+def main_btc():
+    df = pd.read_csv("data/BTC_E_Options_09NOV25.csv")
+    # df_pre = preprocess_deribit(df)
+    # df_pre.head()
+
+    res = summarize_symbol_period_ivrmse(
+        df_all=df,
+        symbol="BTC",
+        type="european",
+        start_date="2025-11-09",
+        end_date="2025-11-09",
+        buckets=[7, 30, 90],
+        min_parity_pairs=4,
+        tau_floor_days=3,
+        run_bs=True,
+        run_jd=True,
+        run_heston=True,
+        run_qlbs=True,
+        run_rlop=True,
+        show_progress=True,
+        print_daily=True,
+        out_dir="BTC_09NOV25_v3",  # outputs saved here
+    )
+
+    # PRIMARY (paper): equal-day mean table
+    tbl_equal = make_publication_table(
+        res,
+        symbol="BTC",
+        measure="equal",
+        buckets=[7, 30, 90],
+        decimals=2,
+        out_dir="BTC_09NOV25_v3",
+        basename="table_ivrmse",
+    )
+
+    # SECONDARY (robustness): pooled table
+    tbl_pooled = make_publication_table(
+        res,
+        symbol="BTC",
+        measure="pooled",
+        buckets=[7, 30, 90],
+        decimals=2,
+        out_dir="BTC_09NOV25_v3",
+        basename="table_ivrmse",
+    )
+
+    print(tbl_equal)
+    print(tbl_pooled)
+
+
+class Test(TestCase):
+    def test_main(self):
+        main_spy20()
+        main_spy25()
+        main_btc()
+
+
+# python -m unittest playground/options_pricing_baselines_v2.py

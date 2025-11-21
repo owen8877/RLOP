@@ -15,3 +15,5 @@ runs
 lib0
 data/
 *_baseline/
+SPY_*
+BTC_*

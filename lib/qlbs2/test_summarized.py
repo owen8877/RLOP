@@ -629,6 +629,7 @@ def summarize_symbol_period_ivrmse(
     run_jd: bool = True,
     run_heston: bool = True,
     run_qlbs: bool = True,
+    run_rlop: bool = True,
     show_progress: bool = True,
     print_daily: bool = True,
     out_dir: Optional[str] = None,
@@ -862,6 +863,7 @@ def summarize_symbol_period_ivrmse(
             ("JD", "JD_IVRMSE_x1000_Whole"),
             ("Heston", "Heston_IVRMSE_x1000_Whole"),
             ("QLBS", "QLBS_IVRMSE_x1000_Whole"),
+            ("RLOP", "RLOP_IVRMSE_x1000_Whole"),
         ]:
             if col in day_df.columns:
                 pooled = _pooled_rmse_x1000(day_df[["N", col]].rename(columns={col: "val"}), "val")
