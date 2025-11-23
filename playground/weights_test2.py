@@ -972,7 +972,7 @@ def summarize_symbol_period_ivrmse(
             # NOTE: this part is the new QLBS model
             ##########################################################################
             if run_qlbs:
-                from lib.qlbs2.test_trained_model import QLBSModel
+                from lib.qlbs2.test_trained_model2 import QLBSModel
 
                 risk_lambda = 0.01
                 Qmodel = QLBSModel(
@@ -1061,7 +1061,7 @@ def summarize_symbol_period_ivrmse(
             # NOTE: this part is the new RLOP model
             ##########################################################################
             if run_rlop:
-                from lib.rlop2.test_trained_model import RLOPModel
+                from lib.rlop2.test_trained_model2 import RLOPModel
 
                 Rmodel = RLOPModel(
                     is_call_option=True,
