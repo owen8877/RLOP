@@ -1,0 +1,1 @@
+symbol=BTC\nperiod=2025-11-09..2025-11-09\nbuckets=[7, 30, 90]\nmin_parity_pairs=4\ntau_floor_days=3\nrun_bs=True run_jd=True run_heston=True\n
