@@ -16,4 +16,4 @@ lib0
 data/
 *_baseline/
 SPY_*
-BTC_*
+BTC_*.venv/
