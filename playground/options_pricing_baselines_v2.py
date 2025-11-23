@@ -1051,6 +1051,8 @@ def summarize_symbol_period_ivrmse(
                         "QLBS_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
                     }
                 )
+                # NEW: stash QLBS per-row predictions
+                preds_rows.append(_predict_model_prices(g, qlbs_price, "QLBS", bucket))
 
                 ##########################################################################
 
@@ -1138,6 +1140,8 @@ def summarize_symbol_period_ivrmse(
                         "RLOP_IVRMSE_x1000_>1.03": ivs[">1.03"] * 1000 if np.isfinite(ivs[">1.03"]) else np.nan,
                     }
                 )
+                # NEW: stash RLOP per-row predictions
+                preds_rows.append(_predict_model_prices(g, rlop_price, "RLOP", bucket))
 
                 ##########################################################################
 
@@ -1239,6 +1243,10 @@ def summarize_symbol_period_ivrmse(
             preds_wide = preds_wide.rename(columns={"JD": "price_JD"})
         if "SV" in preds_wide.columns:
             preds_wide = preds_wide.rename(columns={"SV": "price_SV"})
+        if "QLBS" in preds_wide.columns:
+            preds_wide = preds_wide.rename(columns={"QLBS": "price_QLBS"})
+        if "RLOP" in preds_wide.columns:
+            preds_wide = preds_wide.rename(columns={"RLOP": "price_RLOP"})
 
         preds_wide_fp = outp / "predicted_prices_wide.csv"
         preds_wide.to_csv(preds_wide_fp, index=False)
@@ -1444,6 +1452,105 @@ def main_spy25():
     print(tbl_equal)
     print(tbl_pooled)
 
+def main_xop20():
+    df = pd.read_csv("data/xop_preprocessed_calls_20q1.csv")
+    # df_pre = adapter_eur_calls_to_summarizer(df)
+    # df_pre.head()
+
+    res = summarize_symbol_period_ivrmse(
+        df_all=df,
+        symbol="XOP",
+        type="american",
+        start_date="2020-01-06",
+        end_date="2020-03-30",
+        buckets=[14, 28, 56],
+        min_parity_pairs=4,
+        tau_floor_days=3,
+        run_bs=True,
+        run_jd=True,
+        run_heston=True,
+        run_qlbs=True,
+        run_rlop=True,
+        show_progress=True,
+        print_daily=True,
+        out_dir="XOP_20Q1_baseline_v3",  # outputs saved here
+    )
+
+    # PRIMARY (paper): equal-day mean table
+    tbl_equal = make_publication_table(
+        res,
+        symbol="XOP",
+        measure="equal",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="XOP_20Q1_baseline_v3",
+        basename="table_ivrmse",
+    )
+
+    # SECONDARY (robustness): pooled table
+    tbl_pooled = make_publication_table(
+        res,
+        symbol="XOP",
+        measure="pooled",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="XOP_20Q1_baseline_v3",
+        basename="table_ivrmse",
+    )
+
+    print(tbl_equal)
+    print(tbl_pooled)
+
+
+def main_xop25():
+    df = pd.read_csv("data/xop_preprocessed_calls_25.csv")
+    # df_pre = adapter_eur_calls_to_summarizer(df)
+    # df_pre.head()
+
+    res = summarize_symbol_period_ivrmse(
+        df_all=df,
+        symbol="XOP",
+        type="american",
+        start_date="2025-04-01",
+        end_date="2025-06-30",
+        buckets=[14, 28, 56],
+        min_parity_pairs=4,
+        tau_floor_days=3,
+        run_bs=True,
+        run_jd=True,
+        run_heston=True,
+        run_qlbs=True,
+        run_rlop=True,
+        show_progress=True,
+        print_daily=True,
+        out_dir="XOP_25Q2_baseline_v3",  # outputs saved here
+    )
+
+    # PRIMARY (paper): equal-day mean table
+    tbl_equal = make_publication_table(
+        res,
+        symbol="XOP",
+        measure="equal",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="XOP_25Q2_baseline_v3",
+        basename="table_ivrmse",
+    )
+
+    # SECONDARY (robustness): pooled table
+    tbl_pooled = make_publication_table(
+        res,
+        symbol="XOP",
+        measure="pooled",
+        buckets=[14, 28, 56],
+        decimals=2,
+        out_dir="XOP_25Q2_baseline_v3",
+        basename="table_ivrmse",
+    )
+
+    print(tbl_equal)
+    print(tbl_pooled)
+
 
 def main_btc():
     df = pd.read_csv("data/BTC_E_Options_09NOV25.csv")
@@ -1499,6 +1606,8 @@ class Test(TestCase):
     def test_main(self):
         main_spy20()
         main_spy25()
+        main_xop20()
+        main_xop25()
         main_btc()
 
 
