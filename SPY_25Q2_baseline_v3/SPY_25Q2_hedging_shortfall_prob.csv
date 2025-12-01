@@ -1,0 +1,4 @@
+Metric,Asset,BS,JD,SV,QLBS,RLOP
+shortfall_prob,SPY (τ=14d),1.0,1.0,0.991,1.0,1.0
+shortfall_prob,SPY (τ=28d),1.0,1.0,0.972,1.0,0.749
+shortfall_prob,SPY (τ=56d),1.0,0.996,0.93,1.0,0.238
