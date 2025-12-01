@@ -1,0 +1,4 @@
+Metric,Asset,BS,JD,SV,QLBS,RLOP
+shortfall_prob,XOP (τ=14d),0.98,0.986,0.885,0.882,1.0
+shortfall_prob,XOP (τ=28d),0.956,0.966,0.904,0.836,0.956
+shortfall_prob,XOP (τ=56d),0.934,0.908,0.93,0.848,0.247
