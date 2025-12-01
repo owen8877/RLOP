@@ -2361,8 +2361,8 @@ class Test(TestCase):
         #main_xop25()
         #main_btc()
         hedging_spy20()
-        #hedging_spy25()
-        #hedging_xop20()
+        hedging_spy25()
+        hedging_xop20()
         hedging_xop25()
 
 
