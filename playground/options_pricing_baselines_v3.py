@@ -1520,7 +1520,6 @@ def summarize_symbol_period_hedging(
             continue
 
         calls["bucket"] = calls["tau"].apply(assign_bucket_centers)
-        # moneyness_F is already added in prepare_calls_one_day_symbol, but make sure:
         if "moneyness_F" not in calls.columns:
             calls["moneyness_F"] = calls["strike"] / calls["F"]
 
@@ -1529,15 +1528,36 @@ def summarize_symbol_period_hedging(
             if calls_b.empty:
                 continue
 
-            # World volatility = median market IV for this (day, bucket)
+            # ----- world settings for this (day, bucket) -----
+            # World volatility = median market IV in this bucket (same as before)
             sigma_true = float(calls_b["sigma_mkt_b76"].median())
 
-            # ===== calibrations: identical logic to IVRMSE / old dynamic code =====
+            # Use the bucket centre as the hedging horizon: 14d / 28d / 56d
+            center_days = int(bucket_label.rstrip("d"))
+            T_world = center_days / 252.0
+            n_steps_local = max(1, center_days)      # hedge once per trading day
+
+            # Representative S0 and r for the underlying world
+            row0 = calls_b.iloc[0]
+            S0_world = float(row0["F"])
+            r_world = float(row0["r"])
+
+            # ----- simulate GBM ONCE per (day, bucket) -----
+            S_paths = _simulate_gbm_paths(
+                S0=S0_world,
+                r=r_world,
+                sigma_true=sigma_true,
+                T=T_world,
+                n_steps=n_steps_local,
+                n_paths=n_paths,
+                seed=seed,
+            )
+
+            # ===== calibrations: identical to your original code =====
             price_fns: Dict[str, callable] = {}
             delta_fns: Dict[str, callable] = {}
 
             # BS
-            sigma_bs = np.nan
             if run_bs:
                 sigma_bs = fit_sigma_bucket(calls_b)
 
@@ -1547,10 +1567,11 @@ def summarize_symbol_period_hedging(
                 price_fns["BS"] = lambda S_vec, K_, tau_, r_: np.array(
                     [bs_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
                 )
-                delta_fns["BS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(price_fns["BS"], S_vec, K_, tau_, r_)
+                delta_fns["BS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(
+                    price_fns["BS"], S_vec, K_, tau_, r_
+                )
 
             # JD
-            jd_params = None
             if run_jd:
                 jd_params, _ = calibrate_jd_bucket(calls_b)
                 sigma_jd = jd_params["sigma"]
@@ -1564,10 +1585,11 @@ def summarize_symbol_period_hedging(
                 price_fns["JD"] = lambda S_vec, K_, tau_, r_: np.array(
                     [jd_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
                 )
-                delta_fns["JD"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(price_fns["JD"], S_vec, K_, tau_, r_)
+                delta_fns["JD"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(
+                    price_fns["JD"], S_vec, K_, tau_, r_
+                )
 
             # Heston
-            h_params = None
             if run_heston:
                 h_params, _ = calibrate_heston_bucket(calls_b, u_max=100.0, n_points=501)
 
@@ -1577,22 +1599,20 @@ def summarize_symbol_period_hedging(
                 price_fns["SV"] = lambda S_vec, K_, tau_, r_: np.array(
                     [sv_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
                 )
-                delta_fns["SV"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(price_fns["SV"], S_vec, K_, tau_, r_)
+                delta_fns["SV"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(
+                    price_fns["SV"], S_vec, K_, tau_, r_
+                )
 
             # QLBS
-            q_result = None
             Qmodel = None
-            risk_lambda_qlbs = 0.01
             if run_qlbs:
+                from lib.qlbs2.test_trained_model import QLBSModel
+
+                risk_lambda_qlbs = 0.01
                 time_to_expiries = calls_b["tau"].to_numpy()
                 strikes = calls_b["strike"].to_numpy()
                 observed_prices = calls_b["C_mid"].to_numpy()
                 inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
-
-                # Use a representative spot/r from the bucket (same idea as IVRMSE)
-                row0 = calls_b.iloc[0]
-                S0_fit = float(row0["F"])
-                r_fit = float(row0["r"])
 
                 Qmodel = QLBSModel(
                     is_call_option=True,
@@ -1600,10 +1620,10 @@ def summarize_symbol_period_hedging(
                     anchor_T=28 / 252,
                 )
                 q_result = Qmodel.fit(
-                    spot=S0_fit,
+                    spot=S0_world,
                     time_to_expiries=time_to_expiries,
                     strikes=strikes,
-                    r=r_fit,
+                    r=r_world,
                     risk_lambda=risk_lambda_qlbs,
                     friction=friction,
                     observed_prices=observed_prices,
@@ -1612,7 +1632,6 @@ def summarize_symbol_period_hedging(
                     mu_guess=0.0,
                     n_epochs=2000,
                 )
-
                 sigma_q, mu_q = q_result.sigma, q_result.mu
 
                 def qlbs_price(F, K, tau, r):
@@ -1636,18 +1655,15 @@ def summarize_symbol_period_hedging(
                 )
 
             # RLOP
-            r_result = None
             Rmodel = None
-            risk_lambda_rlop = 0.10
             if run_rlop:
+                from lib.rlop2.test_trained_model import RLOPModel
+
+                risk_lambda_rlop = 0.10
                 time_to_expiries = calls_b["tau"].to_numpy()
                 strikes = calls_b["strike"].to_numpy()
                 observed_prices = calls_b["C_mid"].to_numpy()
                 inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
-
-                row0 = calls_b.iloc[0]
-                S0_fit = float(row0["F"])
-                r_fit = float(row0["r"])
 
                 Rmodel = RLOPModel(
                     is_call_option=True,
@@ -1655,10 +1671,10 @@ def summarize_symbol_period_hedging(
                     anchor_T=28 / 252,
                 )
                 r_result = Rmodel.fit(
-                    spot=S0_fit,
+                    spot=S0_world,
                     time_to_expiries=time_to_expiries,
                     strikes=strikes,
-                    r=r_fit,
+                    r=r_world,
                     risk_lambda=risk_lambda_rlop,
                     friction=friction,
                     observed_prices=observed_prices,
@@ -1667,7 +1683,6 @@ def summarize_symbol_period_hedging(
                     mu_guess=0.0,
                     n_epochs=2000,
                 )
-
                 sigma_r, mu_r = r_result.sigma, r_result.mu
 
                 def rlop_price(F, K, tau, r):
@@ -1690,8 +1705,9 @@ def summarize_symbol_period_hedging(
                     price_fns["RLOP"], S_vec, K_, tau_, r_
                 )
 
-            # ========== for each moneyness section, pick a representative strike and hedge ==========
             models = list(price_fns.keys())
+
+            # ===== loop over moneyness sections, reusing S_paths =====
             for section_name in moneyness_sections:
                 if section_name == "Whole sample":
                     sub = calls_b
@@ -1704,40 +1720,21 @@ def summarize_symbol_period_hedging(
                 else:
                     continue
 
-                # skip section if no contracts in this moneyness slice
                 if sub.empty:
                     continue
 
-                # Representative strike in this slice: median moneyness
+                # Representative strike for this moneyness slice
                 m_target = float(sub["moneyness_F"].median())
                 idx = (sub["moneyness_F"] - m_target).abs().idxmin()
                 row_rep = sub.loc[idx]
-
-                S0 = float(row_rep["F"])
                 K = float(row_rep["strike"])
-                T = float(row_rep["tau"])
-                r_rate = float(row_rep["r"])
-
-                # Daily hedging: one rebalance per trading day of life
-                T_trading_days = T * 252.0
-                n_steps_local = max(1, int(round(T_trading_days)))
-
-                S_paths = _simulate_gbm_paths(
-                    S0=S0,
-                    r=r_rate,
-                    sigma_true=sigma_true,
-                    T=T,
-                    n_steps=n_steps_local,
-                    n_paths=n_paths,
-                    seed=seed,
-                )
 
                 for model_name in models:
                     metrics = _hedge_paths(
                         S_paths=S_paths,
                         K=K,
-                        r=r_rate,
-                        T=T,
+                        r=r_world,
+                        T=T_world,
                         price_fn=price_fns[model_name],
                         delta_fn=delta_fns[model_name],
                         friction=friction,
@@ -1748,9 +1745,9 @@ def summarize_symbol_period_hedging(
                         "bucket": bucket_label,
                         "moneyness_section": section_name,
                         "model": model_name,
-                        "S0": S0,
+                        "S0": S0_world,
                         "K": K,
-                        "T_days": T * 252.0,
+                        "T_days": T_world * 252.0,
                         "sigma_true": sigma_true,
                     }
                     row_out.update(metrics)
@@ -2772,8 +2769,8 @@ class Test(TestCase):
         #main_xop20()
         #main_xop25()
         #main_btc()
-        hedging_spy20()
-        hedging_spy25()
+        #hedging_spy20()
+        #hedging_spy25()
         hedging_xop20()
         hedging_xop25()
 
