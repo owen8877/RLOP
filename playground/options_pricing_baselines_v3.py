@@ -1433,7 +1433,6 @@ def summarize_symbol_period_hedging(
     buckets: List[int] = (14, 28, 56),
     min_parity_pairs: int = 4,
     tau_floor_days: int = 3,
-    n_steps: int = 28,
     n_paths: int = 2000,
     friction: float = 4e-3,
     seed: int = 123,
@@ -1488,12 +1487,12 @@ def summarize_symbol_period_hedging(
 
     # Moneyness “sections” parallel to IVRMSE
     # (not disjoint on purpose, to match your static table)
-    moneyness_sections = {
-        "Whole sample": (-np.inf, np.inf),
-        "Moneyness <1": (-np.inf, 1.0),
-        "Moneyness >1": (1.0, np.inf),
-        "Moneyness >1.03": (1.03, np.inf),
-    }
+    moneyness_sections = [
+        "Whole sample",
+        "Moneyness <1",
+        "Moneyness >1",
+        "Moneyness >1.03"
+    ]
 
     days = sorted(df["date"].unique())
     iterator = days
@@ -1693,7 +1692,7 @@ def summarize_symbol_period_hedging(
 
             # ========== for each moneyness section, pick a representative strike and hedge ==========
             models = list(price_fns.keys())
-            for section_name, (lo, hi) in moneyness_sections.items():
+            for section_name in moneyness_sections:
                 if section_name == "Whole sample":
                     sub = calls_b
                 elif section_name == "Moneyness <1":
@@ -1703,6 +1702,10 @@ def summarize_symbol_period_hedging(
                 elif section_name == "Moneyness >1.03":
                     sub = calls_b[calls_b["moneyness_F"] > 1.03]
                 else:
+                    continue
+
+                # skip section if no contracts in this moneyness slice
+                if sub.empty:
                     continue
 
                 # Representative strike in this slice: median moneyness
@@ -1715,12 +1718,16 @@ def summarize_symbol_period_hedging(
                 T = float(row_rep["tau"])
                 r_rate = float(row_rep["r"])
 
+                # Daily hedging: one rebalance per trading day of life
+                T_trading_days = T * 252.0
+                n_steps_local = max(1, int(round(T_trading_days)))
+
                 S_paths = _simulate_gbm_paths(
                     S0=S0,
                     r=r_rate,
                     sigma_true=sigma_true,
                     T=T,
-                    n_steps=n_steps,
+                    n_steps=n_steps_local,
                     n_paths=n_paths,
                     seed=seed,
                 )
@@ -2287,7 +2294,6 @@ def hedging_spy20():
         buckets=[14, 28, 56],   # or [28] if you prefer only 1M
         min_parity_pairs=4,
         tau_floor_days=3,
-        n_steps=28,
         n_paths=2000,
         friction=4e-3,
         seed=123,
@@ -2346,7 +2352,6 @@ def hedging_spy25():
         buckets=[14, 28, 56],   # keep consistent with IVRMSE summary
         min_parity_pairs=4,
         tau_floor_days=3,
-        n_steps=28,
         n_paths=2000,
         friction=4e-3,
         seed=123,
@@ -2406,7 +2411,6 @@ def hedging_xop20():
         buckets=[14, 28, 56],
         min_parity_pairs=4,
         tau_floor_days=3,
-        n_steps=28,
         n_paths=2000,
         friction=4e-3,
         seed=123,
@@ -2466,7 +2470,6 @@ def hedging_xop25():
         buckets=[14, 28, 56],
         min_parity_pairs=4,
         tau_floor_days=3,
-        n_steps=28,
         n_paths=2000,
         friction=4e-3,
         seed=123,
