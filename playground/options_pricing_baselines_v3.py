@@ -1573,7 +1573,7 @@ def summarize_symbol_period_hedging(
                 h_params, _ = calibrate_heston_bucket(calls_b, u_max=100.0, n_points=501)
 
                 def sv_price(F, K, tau, r):
-                    return heston_price_call(F, K, tau, r, h_params, u_max=60.0, n_points=201)
+                    return heston_price_call(F, K, tau, r, h_params, u_max=100.0, n_points=501)
 
                 price_fns["SV"] = lambda S_vec, K_, tau_, r_: np.array(
                     [sv_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
@@ -1694,8 +1694,15 @@ def summarize_symbol_period_hedging(
             # ========== for each moneyness section, pick a representative strike and hedge ==========
             models = list(price_fns.keys())
             for section_name, (lo, hi) in moneyness_sections.items():
-                sub = calls_b[(calls_b["moneyness_F"] > lo) & (calls_b["moneyness_F"] <= hi)]
-                if sub.empty:
+                if section_name == "Whole sample":
+                    sub = calls_b
+                elif section_name == "Moneyness <1":
+                    sub = calls_b[calls_b["moneyness_F"] < 1.0]
+                elif section_name == "Moneyness >1":
+                    sub = calls_b[calls_b["moneyness_F"] > 1.0]
+                elif section_name == "Moneyness >1.03":
+                    sub = calls_b[calls_b["moneyness_F"] > 1.03]
+                else:
                     continue
 
                 # Representative strike in this slice: median moneyness
