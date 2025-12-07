@@ -210,51 +210,6 @@ def merton_price_call_b76(
 
 
 # ============================================================
-# Merton Jump–Diffusion (JD)
-# ============================================================
-
-
-def merton_price_call_b76(
-    F: float,
-    K: float,
-    tau: float,
-    r: float,
-    sigma: float,
-    lam: float,
-    muJ: float,
-    deltaJ: float,
-    eps_tail: float = 1e-8,
-    n_max: int = 80,
-) -> float:
-    """
-    Merton JD via Poisson mixture of B76 prices.
-    Compensation k = E[e^Y]-1 = exp(muJ + 0.5*deltaJ^2) - 1
-    Use F_adj = F * exp(-lam * k * tau).
-    For n jumps: F_n = F_adj * exp(n*muJ), sigma_n^2 = sigma^2 + n*deltaJ^2 / tau.
-    """
-    if tau <= 0:
-        DF = math.exp(-r * max(tau, 0.0))
-        return DF * max(F - K, 0.0)
-
-    k = math.exp(muJ + 0.5 * deltaJ * deltaJ) - 1.0
-    F_adj = F * math.exp(-lam * k * tau)
-    L = lam * tau
-
-    p = math.exp(-L)  # p0
-    price = p * b76_price_call(F_adj, K, tau, r, sigma)
-    cum = p
-    n = 0
-    while cum < 1 - eps_tail and n < n_max:
-        n += 1
-        p = p * (L / n)  # p_n
-        sigma_n = math.sqrt(sigma * sigma + (n * deltaJ * deltaJ) / max(tau, 1e-12))
-        F_n = F_adj * math.exp(n * muJ)
-        price += p * b76_price_call(F_n, K, tau, r, sigma_n)
-        cum += p
-    return float(price)
-
-
-# ============================================================
 # Heston Stochastic Volatility (SV)
 # ============================================================
 
