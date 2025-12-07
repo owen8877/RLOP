@@ -1642,7 +1642,7 @@ def summarize_symbol_period_hedging(
 
                 Qmodel = QLBSModel(
                     is_call_option=True,
-                    checkpoint="trained_model/test8/risk_lambda=1.0e-01/policy_1.pt",
+                    checkpoint=f"trained_model/test8/risk_lambda={risk_lambda_qlbs:.1e}/policy_1.pt",
                     anchor_T=28 / 252,
                 )
                 q_result = Qmodel.fit(
@@ -1952,7 +1952,7 @@ def summarize_symbol_period_hedging(
 
 #             Qmodel = QLBSModel(
 #                 is_call_option=True,
-#                 checkpoint="trained_model/test8/risk_lambda=1.0e-01/policy_1.pt",
+#                 checkpoint=f"trained_model/test8/risk_lambda={risk_lambda_qlbs:.1e}/policy_1.pt",
 #                 anchor_T=28 / 252,
 #             )
 #             q_result = Qmodel.fit(
