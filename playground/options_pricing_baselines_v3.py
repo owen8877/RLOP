@@ -1469,13 +1469,13 @@ def _hedge_paths(
 # Reusable dynamic hedging runner for a symbol/period
 # ============================================================
 
-def run_dynamic_hedging_for_symbol_period(
+def summarize_symbol_period_hedging(
     df_all: pd.DataFrame,
     symbol: str,
     type: str,
     start_date: str,
     end_date: str,
-    buckets: List[int] = [28],
+    buckets: List[int] = (14, 28, 56),
     min_parity_pairs: int = 4,
     tau_floor_days: int = 3,
     n_steps: int = 28,
@@ -1487,27 +1487,27 @@ def run_dynamic_hedging_for_symbol_period(
     run_heston: bool = True,
     run_qlbs: bool = True,
     run_rlop: bool = True,
-) -> pd.DataFrame:
+    show_progress: bool = True,
+    print_daily: bool = True,
+    out_dir: Optional[str] = None,
+) -> Dict[str, pd.DataFrame]:
     """
-    One-shot dynamic hedging summary for a symbol & period.
+    Dynamic hedging summary consistent with IVRMSE:
 
-    Strategy:
-      - Preprocess df_all via adapter_eur_calls_to_summarizer or preprocess_deribit (same as IVRMSE).
-      - Filter to [symbol, start_date..end_date].
-      - Pick a representative 'mid' day in the period that has valid calls.
-      - For each requested bucket (e.g., 14,28,56d):
-          * Build bucket cross-section (calls_bucket).
-          * sigma_true = median market IV in that bucket.
-          * Calibrate BS / JD / SV / QLBS / RLOP to that bucket (same as IVRMSE).
-          * Pick ATM-ish strike K and T from that bucket.
-          * Simulate GBM world with sigma_true.
-          * Delta-hedge short call with each model.
-      - Return long-form DataFrame with columns:
-          ['symbol','date','period','bucket','model',
-           'S0','K','T_days','sigma_true',
-           'RMSE_hedge','avg_cost','shortfall_prob','shortfall_1pct'].
+      • Same preprocessing (adapter_eur_calls_to_summarizer / preprocess_deribit)
+      • Loop over ALL days in [start_date, end_date]
+      • For each day & bucket:
+          - use the bucket cross-section (same as IVRMSE)
+          - calibrate BS / JD / SV / QLBS / RLOP on that bucket
+          - pick representative strikes for each moneyness slice
+          - simulate GBM with sigma_true = bucket median IV
+          - delta-hedge a short call with each model
+
+      • Returns:
+          res["daily"]          : one row per day × bucket × moneyness × model
+          res["equal_day_mean"]: per bucket × moneyness × model, averaged over days
     """
-    # --- Preprocess calls, same entry logic as summarize_symbol_period_ivrmse ---
+    # --- Preprocess, same entry as IVRMSE summariser ---
     if type == "american":
         df_pre = adapter_eur_calls_to_summarizer(df_all)
     else:
@@ -1523,332 +1523,699 @@ def run_dynamic_hedging_for_symbol_period(
     )
     df = df_pre.loc[mask].copy()
     if df.empty:
-        raise ValueError(f"No rows for {symbol} in [{start_date}, {end_date}] in dynamic hedging runner.")
+        raise ValueError(f"No rows for {symbol} in [{start_date}, {end_date}] in hedging summariser.")
 
-    # Pick a representative day (midpoint in time)
-    unique_days = sorted(df["date"].unique())
-    rep_day = unique_days[len(unique_days) // 2]
-    df_day = df[df["date"] == rep_day]
-
-    # Build calls for that day using your fast-path/european logic
-    calls, _ = prepare_calls_one_day_symbol(
-        df_day, min_parity_pairs=min_parity_pairs, tau_floor_days=tau_floor_days, type=type
-    )
-    if calls.empty:
-        raise RuntimeError(f"Dynamic hedging: no valid calls on representative day {rep_day.date()}.")
-
-    # Bucket mapper using requested centers
+    # Bucket mapper (same style as IVRMSE)
     def assign_bucket_centers(tau_years: float) -> str:
         days = tau_years * 365.0
         i = int(np.argmin([abs(days - c) for c in buckets]))
         return f"{buckets[i]}d"
 
-    calls["bucket"] = calls["tau"].apply(assign_bucket_centers)
+    # Moneyness “sections” parallel to IVRMSE
+    # (not disjoint on purpose, to match your static table)
+    moneyness_sections = {
+        "Whole sample": (-np.inf, np.inf),
+        "Moneyness <1": (-np.inf, 1.0),
+        "Moneyness >1": (1.0, np.inf),
+        "Moneyness >1.03": (1.03, np.inf),
+    }
 
-    bucket_labels = [f"{d}d" for d in buckets]
-    period_str = f"{start_date}..{end_date}"
+    days = sorted(df["date"].unique())
+    iterator = days
+    if show_progress:
+        try:
+            from tqdm.auto import tqdm
+            iterator = tqdm(days, desc=f"hedge {symbol} {start_date}→{end_date}")
+        except Exception:
+            pass
 
-    results_rows = []
+    daily_rows: List[Dict[str, float]] = []
 
     # Import RL models once
     from lib.qlbs2.test_trained_model import QLBSModel
     from lib.rlop2.test_trained_model import RLOPModel
 
-    for d in bucket_labels:
-        calls_b = calls[calls["bucket"] == d].copy()
-        if calls_b.empty:
-            print(f"[dynamic hedging] bucket {d} has no contracts on {rep_day.date()}, skipping.")
+    for day in iterator:
+        df_day = df[df["date"] == day]
+        calls, _ = prepare_calls_one_day_symbol(
+            df_day, min_parity_pairs=min_parity_pairs, tau_floor_days=tau_floor_days, type=type
+        )
+        if calls.empty:
+            if print_daily:
+                print(f"[{pd.Timestamp(day).date()}] no valid contracts after filters")
             continue
 
-        # World vol = median market IV on this bucket
-        sigma_true = float(calls_b["sigma_mkt_b76"].median())
+        calls["bucket"] = calls["tau"].apply(assign_bucket_centers)
+        # moneyness_F is already added in prepare_calls_one_day_symbol, but make sure:
+        if "moneyness_F" not in calls.columns:
+            calls["moneyness_F"] = calls["strike"] / calls["F"]
 
-        # Choose ATM-ish strike: moneyness_F ~= 1
-        calls_b["moneyness_F"] = calls_b["strike"] / calls_b["F"]
-        idx_atm = (calls_b["moneyness_F"] - 1.0).abs().idxmin()
-        row_atm = calls_b.loc[idx_atm]
+        for bucket_label, calls_b in calls.groupby("bucket"):
+            calls_b = calls_b.copy()
+            if calls_b.empty:
+                continue
 
-        F0 = float(row_atm["F"])
-        K = float(row_atm["strike"])
-        T = float(row_atm["tau"])
-        r = float(row_atm["r"])
-        S0 = F0  # treat forward ~ spot for hedging world
+            # World volatility = median market IV for this (day, bucket)
+            sigma_true = float(calls_b["sigma_mkt_b76"].median())
 
-        # Calibrate BS baseline
-        sigma_bs = fit_sigma_bucket(calls_b) if run_bs else np.nan
+            # ===== calibrations: identical logic to IVRMSE / old dynamic code =====
+            price_fns: Dict[str, callable] = {}
+            delta_fns: Dict[str, callable] = {}
 
-        # Calibrate JD
-        jd_params = None
-        if run_jd:
-            jd_params, _ = calibrate_jd_bucket(calls_b)
+            # BS
+            sigma_bs = np.nan
+            if run_bs:
+                sigma_bs = fit_sigma_bucket(calls_b)
 
-        # Calibrate Heston (SV)
-        h_params = None
-        if run_heston:
-            h_params, _ = calibrate_heston_bucket(calls_b, u_max=100.0, n_points=501)
+                def bs_price(F, K, tau, r):
+                    return b76_price_call(F, K, tau, r, sigma_bs)
 
-        # Calibrate QLBS on this bucket (same style as IVRMSE)
-        q_result = None
-        if run_qlbs:
+                price_fns["BS"] = lambda S_vec, K_, tau_, r_: np.array(
+                    [bs_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
+                )
+                delta_fns["BS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(price_fns["BS"], S_vec, K_, tau_, r_)
+
+            # JD
+            jd_params = None
+            if run_jd:
+                jd_params, _ = calibrate_jd_bucket(calls_b)
+                sigma_jd = jd_params["sigma"]
+                lam_jd = jd_params["lam"]
+                muJ_jd = jd_params["muJ"]
+                dJ_jd = jd_params["deltaJ"]
+
+                def jd_price(F, K, tau, r):
+                    return merton_price_call_b76(F, K, tau, r, sigma_jd, lam_jd, muJ_jd, dJ_jd)
+
+                price_fns["JD"] = lambda S_vec, K_, tau_, r_: np.array(
+                    [jd_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
+                )
+                delta_fns["JD"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(price_fns["JD"], S_vec, K_, tau_, r_)
+
+            # Heston
+            h_params = None
+            if run_heston:
+                h_params, _ = calibrate_heston_bucket(calls_b, u_max=100.0, n_points=501)
+
+                def sv_price(F, K, tau, r):
+                    return heston_price_call(F, K, tau, r, h_params, u_max=60.0, n_points=201)
+
+                price_fns["SV"] = lambda S_vec, K_, tau_, r_: np.array(
+                    [sv_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
+                )
+                delta_fns["SV"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(price_fns["SV"], S_vec, K_, tau_, r_)
+
+            # QLBS
+            q_result = None
+            Qmodel = None
             risk_lambda_qlbs = 0.01
-            time_to_expiries = calls_b["tau"].to_numpy()
-            strikes = calls_b["strike"].to_numpy()
-            observed_prices = calls_b["C_mid"].to_numpy()
-            inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
+            if run_qlbs:
+                time_to_expiries = calls_b["tau"].to_numpy()
+                strikes = calls_b["strike"].to_numpy()
+                observed_prices = calls_b["C_mid"].to_numpy()
+                inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
 
-            Qmodel = QLBSModel(
-                is_call_option=True,
-                checkpoint="trained_model/test8/risk_lambda=1.0e-01/policy_1.pt",
-                anchor_T=28 / 252,
-            )
-            q_result = Qmodel.fit(
-                spot=S0,
-                time_to_expiries=time_to_expiries,
-                strikes=strikes,
-                r=r,
-                risk_lambda=risk_lambda_qlbs,
-                friction=friction,
-                observed_prices=observed_prices,
-                weights=inv_price,
-                sigma_guess=0.3,
-                mu_guess=0.0,
-                n_epochs=2000,
-            )
+                # Use a representative spot/r from the bucket (same idea as IVRMSE)
+                row0 = calls_b.iloc[0]
+                S0_fit = float(row0["F"])
+                r_fit = float(row0["r"])
 
-        # Calibrate RLOP
-        r_result = None
-        if run_rlop:
-            risk_lambda_rlop = 0.10
-            time_to_expiries = calls_b["tau"].to_numpy()
-            strikes = calls_b["strike"].to_numpy()
-            observed_prices = calls_b["C_mid"].to_numpy()
-            inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
+                Qmodel = QLBSModel(
+                    is_call_option=True,
+                    checkpoint="trained_model/test8/risk_lambda=1.0e-01/policy_1.pt",
+                    anchor_T=28 / 252,
+                )
+                q_result = Qmodel.fit(
+                    spot=S0_fit,
+                    time_to_expiries=time_to_expiries,
+                    strikes=strikes,
+                    r=r_fit,
+                    risk_lambda=risk_lambda_qlbs,
+                    friction=friction,
+                    observed_prices=observed_prices,
+                    weights=inv_price,
+                    sigma_guess=0.3,
+                    mu_guess=0.0,
+                    n_epochs=2000,
+                )
 
-            Rmodel = RLOPModel(
-                is_call_option=True,
-                checkpoint="trained_model/testr9/policy_1.pt",
-                anchor_T=28 / 252,
-            )
-            r_result = Rmodel.fit(
-                spot=S0,
-                time_to_expiries=time_to_expiries,
-                strikes=strikes,
-                r=r,
-                risk_lambda=risk_lambda_rlop,
-                friction=friction,
-                observed_prices=observed_prices,
-                weights=inv_price,
-                sigma_guess=0.3,
-                mu_guess=0.0,
-                n_epochs=2000,
-            )
+                sigma_q, mu_q = q_result.sigma, q_result.mu
 
-        # --------------------------------------------------------
-        # Wrap model-specific price functions price_fn(S_vec,K,tau,r)
-        # --------------------------------------------------------
-
-        price_fns = {}
-        delta_fns = {}
-
-        if run_bs and np.isfinite(sigma_bs):
-            def bs_price_fn(S_vec, K_, tau_, r_):
-                S_vec = np.atleast_1d(S_vec)
-                out = np.empty_like(S_vec, dtype=float)
-                for i, Si in enumerate(S_vec):
-                    out[i] = b76_price_call(Si, K_, tau_, r_, sigma_bs)
-                return out
-            price_fns["BS"] = bs_price_fn
-            delta_fns["BS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(bs_price_fn, S_vec, K_, tau_, r_)
-
-        if run_jd and jd_params:
-            sigma_jd = jd_params["sigma"]
-            lam_jd = jd_params["lam"]
-            muJ_jd = jd_params["muJ"]
-            dJ_jd = jd_params["deltaJ"]
-
-            def jd_price_fn(S_vec, K_, tau_, r_):
-                S_vec = np.atleast_1d(S_vec)
-                out = np.empty_like(S_vec, dtype=float)
-                for i, Si in enumerate(S_vec):
-                    out[i] = merton_price_call_b76(Si, K_, tau_, r_, sigma_jd, lam_jd, muJ_jd, dJ_jd)
-                return out
-
-            price_fns["JD"] = jd_price_fn
-            delta_fns["JD"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(jd_price_fn, S_vec, K_, tau_, r_)
-
-        if run_heston and h_params:
-            def sv_price_fn(S_vec, K_, tau_, r_):
-                S_vec = np.atleast_1d(S_vec)
-                out = np.empty_like(S_vec, dtype=float)
-                for i, Si in enumerate(S_vec):
-                    # Slightly lighter settings than calibration for speed
-                    out[i] = heston_price_call(Si, K_, tau_, r_, h_params, u_max=60.0, n_points=201)
-                return out
-
-            price_fns["SV"] = sv_price_fn
-            delta_fns["SV"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(sv_price_fn, S_vec, K_, tau_, r_)
-
-        if run_qlbs and q_result:
-            risk_lambda_qlbs = 0.01
-            sigma_q, mu_q = q_result.sigma, q_result.mu
-
-            def qlbs_price_fn(S_vec, K_, tau_, r_):
-                S_vec = np.atleast_1d(S_vec)
-                out = np.empty_like(S_vec, dtype=float)
-                for i, Si in enumerate(S_vec):
+                def qlbs_price(F, K, tau, r):
                     res = Qmodel.predict(
-                        spot=Si,
-                        time_to_expiries=np.array([tau_]),
-                        strikes=np.array([K_]),
-                        r=r_,
+                        spot=F,
+                        time_to_expiries=np.array([tau]),
+                        strikes=np.array([K]),
+                        r=r,
                         risk_lambda=risk_lambda_qlbs,
                         friction=friction,
                         sigma_fit=sigma_q,
                         mu_fit=mu_q,
                     )
-                    out[i] = res.estimated_prices[0]
-                return out
+                    return res.estimated_prices[0]
 
-            price_fns["QLBS"] = qlbs_price_fn
-            delta_fns["QLBS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(qlbs_price_fn, S_vec, K_, tau_, r_)
+                price_fns["QLBS"] = lambda S_vec, K_, tau_, r_: np.array(
+                    [qlbs_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
+                )
+                delta_fns["QLBS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(
+                    price_fns["QLBS"], S_vec, K_, tau_, r_
+                )
 
-        if run_rlop and r_result:
+            # RLOP
+            r_result = None
+            Rmodel = None
             risk_lambda_rlop = 0.10
-            sigma_r, mu_r = r_result.sigma, r_result.mu
+            if run_rlop:
+                time_to_expiries = calls_b["tau"].to_numpy()
+                strikes = calls_b["strike"].to_numpy()
+                observed_prices = calls_b["C_mid"].to_numpy()
+                inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
 
-            def rlop_price_fn(S_vec, K_, tau_, r_):
-                S_vec = np.atleast_1d(S_vec)
-                out = np.empty_like(S_vec, dtype=float)
-                for i, Si in enumerate(S_vec):
+                row0 = calls_b.iloc[0]
+                S0_fit = float(row0["F"])
+                r_fit = float(row0["r"])
+
+                Rmodel = RLOPModel(
+                    is_call_option=True,
+                    checkpoint="trained_model/testr9/policy_1.pt",
+                    anchor_T=28 / 252,
+                )
+                r_result = Rmodel.fit(
+                    spot=S0_fit,
+                    time_to_expiries=time_to_expiries,
+                    strikes=strikes,
+                    r=r_fit,
+                    risk_lambda=risk_lambda_rlop,
+                    friction=friction,
+                    observed_prices=observed_prices,
+                    weights=inv_price,
+                    sigma_guess=0.3,
+                    mu_guess=0.0,
+                    n_epochs=2000,
+                )
+
+                sigma_r, mu_r = r_result.sigma, r_result.mu
+
+                def rlop_price(F, K, tau, r):
                     res = Rmodel.predict(
-                        spot=Si,
-                        time_to_expiries=np.array([tau_]),
-                        strikes=np.array([K_]),
-                        r=r_,
+                        spot=F,
+                        time_to_expiries=np.array([tau]),
+                        strikes=np.array([K]),
+                        r=r,
                         risk_lambda=risk_lambda_rlop,
                         friction=friction,
                         sigma_fit=sigma_r,
                         mu_fit=mu_r,
                     )
-                    out[i] = res.estimated_prices[0]
-                return out
+                    return res.estimated_prices[0]
 
-            price_fns["RLOP"] = rlop_price_fn
-            delta_fns["RLOP"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(rlop_price_fn, S_vec, K_, tau_, r_)
+                price_fns["RLOP"] = lambda S_vec, K_, tau_, r_: np.array(
+                    [rlop_price(Si, K_, tau_, r_) for Si in np.atleast_1d(S_vec)], dtype=float
+                )
+                delta_fns["RLOP"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(
+                    price_fns["RLOP"], S_vec, K_, tau_, r_
+                )
 
-        # --------------------------------------------------------
-        # Simulate GBM world and run hedging
-        # --------------------------------------------------------
-        S_paths = _simulate_gbm_paths(
-            S0=S0,
-            r=r,
-            sigma_true=sigma_true,
-            T=T,
-            n_steps=n_steps,
-            n_paths=n_paths,
-            seed=seed,
-        )
+            # ========== for each moneyness section, pick a representative strike and hedge ==========
+            models = list(price_fns.keys())
+            for section_name, (lo, hi) in moneyness_sections.items():
+                sub = calls_b[(calls_b["moneyness_F"] > lo) & (calls_b["moneyness_F"] <= hi)]
+                if sub.empty:
+                    continue
 
-        for model_name in ["BS", "JD", "SV", "QLBS", "RLOP"]:
-            if model_name not in price_fns:
-                continue
-            metrics = _hedge_paths(
-                S_paths=S_paths,
-                K=K,
-                r=r,
-                T=T,
-                price_fn=price_fns[model_name],
-                delta_fn=delta_fns[model_name],
-                friction=friction,
-            )
-            row = {
-                "symbol": symbol,
-                "date": rep_day,
-                "period": period_str,
-                "bucket": d,
-                "model": model_name,
-                "S0": S0,
-                "K": K,
-                "T_days": T * 252.0,
-                "sigma_true": sigma_true,
-            }
-            row.update(metrics)
-            results_rows.append(row)
+                # Representative strike in this slice: median moneyness
+                m_target = float(sub["moneyness_F"].median())
+                idx = (sub["moneyness_F"] - m_target).abs().idxmin()
+                row_rep = sub.loc[idx]
 
-    if not results_rows:
-        raise RuntimeError("run_dynamic_hedging_for_symbol_period: no bucket produced results.")
+                S0 = float(row_rep["F"])
+                K = float(row_rep["strike"])
+                T = float(row_rep["tau"])
+                r_rate = float(row_rep["r"])
 
-    hedge_res = pd.DataFrame(results_rows)
-    return hedge_res
+                S_paths = _simulate_gbm_paths(
+                    S0=S0,
+                    r=r_rate,
+                    sigma_true=sigma_true,
+                    T=T,
+                    n_steps=n_steps,
+                    n_paths=n_paths,
+                    seed=seed,
+                )
+
+                for model_name in models:
+                    metrics = _hedge_paths(
+                        S_paths=S_paths,
+                        K=K,
+                        r=r_rate,
+                        T=T,
+                        price_fn=price_fns[model_name],
+                        delta_fn=delta_fns[model_name],
+                        friction=friction,
+                    )
+                    row_out = {
+                        "date": pd.Timestamp(day),
+                        "symbol": symbol,
+                        "bucket": bucket_label,
+                        "moneyness_section": section_name,
+                        "model": model_name,
+                        "S0": S0,
+                        "K": K,
+                        "T_days": T * 252.0,
+                        "sigma_true": sigma_true,
+                    }
+                    row_out.update(metrics)
+                    daily_rows.append(row_out)
+
+        # optional per-day logging (only using Whole-sample, 28d if present)
+        if print_daily and daily_rows:
+            # just print something short so you can see progress
+            pass
+
+    if not daily_rows:
+        raise RuntimeError("summarize_symbol_period_hedging: no (day,bucket) rows produced.")
+
+    daily = pd.DataFrame(daily_rows)
+
+    metric_cols = ["RMSE_hedge", "avg_cost", "shortfall_prob", "shortfall_1pct"]
+
+    equal_day_mean = (
+        daily
+        .groupby(["bucket", "moneyness_section", "model"], as_index=False)[metric_cols]
+        .mean()
+    )
+    days_used = (
+        daily.groupby(["bucket", "moneyness_section"])["date"]
+        .nunique()
+        .rename("days_used")
+        .reset_index()
+    )
+    equal_day_mean = equal_day_mean.merge(
+        days_used, on=["bucket", "moneyness_section"], how="left"
+    )
+
+    if out_dir is not None:
+        outp = Path(out_dir)
+        outp.mkdir(parents=True, exist_ok=True)
+        daily.to_csv(outp / "hedging_daily.csv", index=False)
+        equal_day_mean.to_csv(outp / "hedging_equal_day_mean.csv", index=False)
+
+    return {"daily": daily, "equal_day_mean": equal_day_mean}
+
+
+# def run_dynamic_hedging_for_symbol_period(
+#     df_all: pd.DataFrame,
+#     symbol: str,
+#     type: str,
+#     start_date: str,
+#     end_date: str,
+#     buckets: List[int] = [28],
+#     min_parity_pairs: int = 4,
+#     tau_floor_days: int = 3,
+#     n_steps: int = 28,
+#     n_paths: int = 2000,
+#     friction: float = 4e-3,
+#     seed: int = 123,
+#     run_bs: bool = True,
+#     run_jd: bool = True,
+#     run_heston: bool = True,
+#     run_qlbs: bool = True,
+#     run_rlop: bool = True,
+# ) -> pd.DataFrame:
+#     """
+#     One-shot dynamic hedging summary for a symbol & period.
+
+#     Strategy:
+#       - Preprocess df_all via adapter_eur_calls_to_summarizer or preprocess_deribit (same as IVRMSE).
+#       - Filter to [symbol, start_date..end_date].
+#       - Pick a representative 'mid' day in the period that has valid calls.
+#       - For each requested bucket (e.g., 14,28,56d):
+#           * Build bucket cross-section (calls_bucket).
+#           * sigma_true = median market IV in that bucket.
+#           * Calibrate BS / JD / SV / QLBS / RLOP to that bucket (same as IVRMSE).
+#           * Pick ATM-ish strike K and T from that bucket.
+#           * Simulate GBM world with sigma_true.
+#           * Delta-hedge short call with each model.
+#       - Return long-form DataFrame with columns:
+#           ['symbol','date','period','bucket','model',
+#            'S0','K','T_days','sigma_true',
+#            'RMSE_hedge','avg_cost','shortfall_prob','shortfall_1pct'].
+#     """
+#     # --- Preprocess calls, same entry logic as summarize_symbol_period_ivrmse ---
+#     if type == "american":
+#         df_pre = adapter_eur_calls_to_summarizer(df_all)
+#     else:
+#         df_pre = preprocess_deribit(df_all)
+
+#     sym_col = "act_symbol" if "act_symbol" in df_pre.columns else "symbol"
+#     df_pre["date"] = pd.to_datetime(df_pre["date"]).dt.normalize()
+
+#     mask = (
+#         (df_pre[sym_col] == symbol)
+#         & (df_pre["date"] >= pd.Timestamp(start_date))
+#         & (df_pre["date"] <= pd.Timestamp(end_date))
+#     )
+#     df = df_pre.loc[mask].copy()
+#     if df.empty:
+#         raise ValueError(f"No rows for {symbol} in [{start_date}, {end_date}] in dynamic hedging runner.")
+
+#     # Pick a representative day (midpoint in time)
+#     unique_days = sorted(df["date"].unique())
+#     rep_day = unique_days[len(unique_days) // 2]
+#     df_day = df[df["date"] == rep_day]
+
+#     # Build calls for that day using your fast-path/european logic
+#     calls, _ = prepare_calls_one_day_symbol(
+#         df_day, min_parity_pairs=min_parity_pairs, tau_floor_days=tau_floor_days, type=type
+#     )
+#     if calls.empty:
+#         raise RuntimeError(f"Dynamic hedging: no valid calls on representative day {rep_day.date()}.")
+
+#     # Bucket mapper using requested centers
+#     def assign_bucket_centers(tau_years: float) -> str:
+#         days = tau_years * 365.0
+#         i = int(np.argmin([abs(days - c) for c in buckets]))
+#         return f"{buckets[i]}d"
+
+#     calls["bucket"] = calls["tau"].apply(assign_bucket_centers)
+
+#     bucket_labels = [f"{d}d" for d in buckets]
+#     period_str = f"{start_date}..{end_date}"
+
+#     results_rows = []
+
+#     # Import RL models once
+#     from lib.qlbs2.test_trained_model import QLBSModel
+#     from lib.rlop2.test_trained_model import RLOPModel
+
+#     for d in bucket_labels:
+#         calls_b = calls[calls["bucket"] == d].copy()
+#         if calls_b.empty:
+#             print(f"[dynamic hedging] bucket {d} has no contracts on {rep_day.date()}, skipping.")
+#             continue
+
+#         # World vol = median market IV on this bucket
+#         sigma_true = float(calls_b["sigma_mkt_b76"].median())
+
+#         # Choose ATM-ish strike: moneyness_F ~= 1
+#         calls_b["moneyness_F"] = calls_b["strike"] / calls_b["F"]
+#         idx_atm = (calls_b["moneyness_F"] - 1.0).abs().idxmin()
+#         row_atm = calls_b.loc[idx_atm]
+
+#         F0 = float(row_atm["F"])
+#         K = float(row_atm["strike"])
+#         T = float(row_atm["tau"])
+#         r = float(row_atm["r"])
+#         S0 = F0  # treat forward ~ spot for hedging world
+
+#         # Calibrate BS baseline
+#         sigma_bs = fit_sigma_bucket(calls_b) if run_bs else np.nan
+
+#         # Calibrate JD
+#         jd_params = None
+#         if run_jd:
+#             jd_params, _ = calibrate_jd_bucket(calls_b)
+
+#         # Calibrate Heston (SV)
+#         h_params = None
+#         if run_heston:
+#             h_params, _ = calibrate_heston_bucket(calls_b, u_max=100.0, n_points=501)
+
+#         # Calibrate QLBS on this bucket (same style as IVRMSE)
+#         q_result = None
+#         if run_qlbs:
+#             risk_lambda_qlbs = 0.01
+#             time_to_expiries = calls_b["tau"].to_numpy()
+#             strikes = calls_b["strike"].to_numpy()
+#             observed_prices = calls_b["C_mid"].to_numpy()
+#             inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
+
+#             Qmodel = QLBSModel(
+#                 is_call_option=True,
+#                 checkpoint="trained_model/test8/risk_lambda=1.0e-01/policy_1.pt",
+#                 anchor_T=28 / 252,
+#             )
+#             q_result = Qmodel.fit(
+#                 spot=S0,
+#                 time_to_expiries=time_to_expiries,
+#                 strikes=strikes,
+#                 r=r,
+#                 risk_lambda=risk_lambda_qlbs,
+#                 friction=friction,
+#                 observed_prices=observed_prices,
+#                 weights=inv_price,
+#                 sigma_guess=0.3,
+#                 mu_guess=0.0,
+#                 n_epochs=2000,
+#             )
+
+#         # Calibrate RLOP
+#         r_result = None
+#         if run_rlop:
+#             risk_lambda_rlop = 0.10
+#             time_to_expiries = calls_b["tau"].to_numpy()
+#             strikes = calls_b["strike"].to_numpy()
+#             observed_prices = calls_b["C_mid"].to_numpy()
+#             inv_price = 1.0 / np.power(np.clip(observed_prices, 1.0, None), 1.0)
+
+#             Rmodel = RLOPModel(
+#                 is_call_option=True,
+#                 checkpoint="trained_model/testr9/policy_1.pt",
+#                 anchor_T=28 / 252,
+#             )
+#             r_result = Rmodel.fit(
+#                 spot=S0,
+#                 time_to_expiries=time_to_expiries,
+#                 strikes=strikes,
+#                 r=r,
+#                 risk_lambda=risk_lambda_rlop,
+#                 friction=friction,
+#                 observed_prices=observed_prices,
+#                 weights=inv_price,
+#                 sigma_guess=0.3,
+#                 mu_guess=0.0,
+#                 n_epochs=2000,
+#             )
+
+#         # --------------------------------------------------------
+#         # Wrap model-specific price functions price_fn(S_vec,K,tau,r)
+#         # --------------------------------------------------------
+
+#         price_fns = {}
+#         delta_fns = {}
+
+#         if run_bs and np.isfinite(sigma_bs):
+#             def bs_price_fn(S_vec, K_, tau_, r_):
+#                 S_vec = np.atleast_1d(S_vec)
+#                 out = np.empty_like(S_vec, dtype=float)
+#                 for i, Si in enumerate(S_vec):
+#                     out[i] = b76_price_call(Si, K_, tau_, r_, sigma_bs)
+#                 return out
+#             price_fns["BS"] = bs_price_fn
+#             delta_fns["BS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(bs_price_fn, S_vec, K_, tau_, r_)
+
+#         if run_jd and jd_params:
+#             sigma_jd = jd_params["sigma"]
+#             lam_jd = jd_params["lam"]
+#             muJ_jd = jd_params["muJ"]
+#             dJ_jd = jd_params["deltaJ"]
+
+#             def jd_price_fn(S_vec, K_, tau_, r_):
+#                 S_vec = np.atleast_1d(S_vec)
+#                 out = np.empty_like(S_vec, dtype=float)
+#                 for i, Si in enumerate(S_vec):
+#                     out[i] = merton_price_call_b76(Si, K_, tau_, r_, sigma_jd, lam_jd, muJ_jd, dJ_jd)
+#                 return out
+
+#             price_fns["JD"] = jd_price_fn
+#             delta_fns["JD"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(jd_price_fn, S_vec, K_, tau_, r_)
+
+#         if run_heston and h_params:
+#             def sv_price_fn(S_vec, K_, tau_, r_):
+#                 S_vec = np.atleast_1d(S_vec)
+#                 out = np.empty_like(S_vec, dtype=float)
+#                 for i, Si in enumerate(S_vec):
+#                     # Slightly lighter settings than calibration for speed
+#                     out[i] = heston_price_call(Si, K_, tau_, r_, h_params, u_max=60.0, n_points=201)
+#                 return out
+
+#             price_fns["SV"] = sv_price_fn
+#             delta_fns["SV"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(sv_price_fn, S_vec, K_, tau_, r_)
+
+#         if run_qlbs and q_result:
+#             risk_lambda_qlbs = 0.01
+#             sigma_q, mu_q = q_result.sigma, q_result.mu
+
+#             def qlbs_price_fn(S_vec, K_, tau_, r_):
+#                 S_vec = np.atleast_1d(S_vec)
+#                 out = np.empty_like(S_vec, dtype=float)
+#                 for i, Si in enumerate(S_vec):
+#                     res = Qmodel.predict(
+#                         spot=Si,
+#                         time_to_expiries=np.array([tau_]),
+#                         strikes=np.array([K_]),
+#                         r=r_,
+#                         risk_lambda=risk_lambda_qlbs,
+#                         friction=friction,
+#                         sigma_fit=sigma_q,
+#                         mu_fit=mu_q,
+#                     )
+#                     out[i] = res.estimated_prices[0]
+#                 return out
+
+#             price_fns["QLBS"] = qlbs_price_fn
+#             delta_fns["QLBS"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(qlbs_price_fn, S_vec, K_, tau_, r_)
+
+#         if run_rlop and r_result:
+#             risk_lambda_rlop = 0.10
+#             sigma_r, mu_r = r_result.sigma, r_result.mu
+
+#             def rlop_price_fn(S_vec, K_, tau_, r_):
+#                 S_vec = np.atleast_1d(S_vec)
+#                 out = np.empty_like(S_vec, dtype=float)
+#                 for i, Si in enumerate(S_vec):
+#                     res = Rmodel.predict(
+#                         spot=Si,
+#                         time_to_expiries=np.array([tau_]),
+#                         strikes=np.array([K_]),
+#                         r=r_,
+#                         risk_lambda=risk_lambda_rlop,
+#                         friction=friction,
+#                         sigma_fit=sigma_r,
+#                         mu_fit=mu_r,
+#                     )
+#                     out[i] = res.estimated_prices[0]
+#                 return out
+
+#             price_fns["RLOP"] = rlop_price_fn
+#             delta_fns["RLOP"] = lambda S_vec, K_, tau_, r_: _delta_from_pricer(rlop_price_fn, S_vec, K_, tau_, r_)
+
+#         # --------------------------------------------------------
+#         # Simulate GBM world and run hedging
+#         # --------------------------------------------------------
+#         S_paths = _simulate_gbm_paths(
+#             S0=S0,
+#             r=r,
+#             sigma_true=sigma_true,
+#             T=T,
+#             n_steps=n_steps,
+#             n_paths=n_paths,
+#             seed=seed,
+#         )
+
+#         for model_name in ["BS", "JD", "SV", "QLBS", "RLOP"]:
+#             if model_name not in price_fns:
+#                 continue
+#             metrics = _hedge_paths(
+#                 S_paths=S_paths,
+#                 K=K,
+#                 r=r,
+#                 T=T,
+#                 price_fn=price_fns[model_name],
+#                 delta_fn=delta_fns[model_name],
+#                 friction=friction,
+#             )
+#             row = {
+#                 "symbol": symbol,
+#                 "date": rep_day,
+#                 "period": period_str,
+#                 "bucket": d,
+#                 "model": model_name,
+#                 "S0": S0,
+#                 "K": K,
+#                 "T_days": T * 252.0,
+#                 "sigma_true": sigma_true,
+#             }
+#             row.update(metrics)
+#             results_rows.append(row)
+
+#     if not results_rows:
+#         raise RuntimeError("run_dynamic_hedging_for_symbol_period: no bucket produced results.")
+
+#     hedge_res = pd.DataFrame(results_rows)
+#     return hedge_res
 
 # ============================================================
 # Publication-style hedging table (BS / JD / SV / QLBS / RLOP)
 # ============================================================
 
-def make_hedging_table(
-    hedge_res: pd.DataFrame,
+def make_hedging_publication_table(
+    hedge_res: Dict[str, pd.DataFrame],
     symbol: str,
-    metric: str = "RMSE_hedge",  # or "avg_cost", "shortfall_prob", "shortfall_1pct"
+    metric: str = "RMSE_hedge",   # "avg_cost", "shortfall_prob", "shortfall_1pct"
     buckets: List[int] = (14, 28, 56),
-    decimals: int = 4,
+    decimals: int = 3,
     out_dir: Optional[str] = None,
     basename: str = "table_hedging",
 ) -> pd.DataFrame:
     """
-    Build a paper-style hedging table analogous to IVRMSE tables:
+    Build a hedging table parallel to the IVRMSE publication table.
 
-      Columns: BS, JD, SV, QLBS, RLOP (only those present in hedge_res)
-      Rows:    one per bucket, like 'SPY (τ=28d)'
-      Extra cols: 'Metric' (e.g., 'RMSE_hedge'), 'Asset'
-      Values:  chosen metric from hedge_res.
+      Sections (rows grouped by this):
+        Whole sample / Moneyness <1 / Moneyness >1 / Moneyness >1.03
 
-    Saves CSV + Markdown (bolds row minimum) if out_dir is set.
+      Rows:
+        one per maturity bucket, e.g. 'SPY (τ=28d)'
+
+      Columns:
+        BS, JD, SV, QLBS, RLOP   (whichever are present in hedge_res)
+
+      Values:
+        equal-day mean of the chosen hedging metric across the period.
     """
-    if hedge_res is None or hedge_res.empty:
-        raise ValueError("hedge_res is empty in make_hedging_table.")
+    if "equal_day_mean" not in hedge_res or hedge_res["equal_day_mean"].empty:
+        raise ValueError("make_hedging_publication_table: equal_day_mean is empty.")
 
-    present_models = sorted(hedge_res["model"].unique().tolist())
-    # Only keep known models to stay consistent with IVRMSE layout
-    models = [m for m in ["BS", "JD", "SV", "QLBS", "RLOP"] if m in present_models]
+    df_src = hedge_res["equal_day_mean"].copy()
 
+    models = sorted(df_src["model"].unique().tolist())
+    sections = [
+        "Whole sample",
+        "Moneyness <1",
+        "Moneyness >1",
+        "Moneyness >1.03",
+    ]
     bucket_labels = [f"{d}d" for d in buckets]
-    rows = []
 
-    for d in bucket_labels:
-        row = {"Metric": metric, "Asset": f"{symbol} (τ={d})"}
-        sub = hedge_res[hedge_res["bucket"] == d]
-        for m in models:
-            val = np.nan
-            if not sub.empty:
-                sub_m = sub[sub["model"] == m]
-                if not sub_m.empty and metric in sub_m.columns:
-                    val = float(sub_m[metric].iloc[0])
-            row[m] = val
-        rows.append(row)
+    rows = []
+    for section_name in sections:
+        for dlab in bucket_labels:
+            row = {"Moneyness": section_name, "Asset": f"{symbol} (τ={dlab})"}
+            sub = df_src[
+                (df_src["bucket"] == dlab)
+                & (df_src["moneyness_section"] == section_name)
+            ]
+            for m in models:
+                val = np.nan
+                if not sub.empty:
+                    sm = sub[sub["model"] == m]
+                    if not sm.empty and metric in sm.columns:
+                        val = float(sm[metric].iloc[0])
+                row[m] = val
+            rows.append(row)
 
     table = pd.DataFrame(rows)
     for m in models:
         table[m] = table[m].round(decimals)
 
-    # Save CSV + Markdown with bold minima
     if out_dir:
         outp = Path(out_dir)
         outp.mkdir(parents=True, exist_ok=True)
         csv_path = outp / f"{basename}_{metric}.csv"
         table.to_csv(csv_path, index=False)
 
-        header = ["Metric", "Asset"] + models
+        # Markdown with bold minima, same style as IVRMSE
+        header = ["Moneyness", "Asset"] + models
         md_rows = []
         md_rows.append("| " + " | ".join(header) + " |")
         md_rows.append("| " + " | ".join(["---"] * len(header)) + " |")
-
         for _, r in table.iterrows():
             vals = [r[m] for m in models]
             not_nan = [i for i, v in enumerate(vals) if pd.notna(v)]
             best_idx = None
             if not_nan:
                 best_idx = min(not_nan, key=lambda i: vals[i])
-            cells = [str(r["Metric"]), str(r["Asset"])]
+            cells = [str(r["Moneyness"]), str(r["Asset"])]
             for i, m in enumerate(models):
                 v = r[m]
                 if pd.isna(v):
@@ -1857,19 +2224,99 @@ def make_hedging_table(
                     s = f"{v:.{decimals}f}"
                     cells.append(f"**{s}**" if i == best_idx else s)
             md_rows.append("| " + " | ".join(cells) + " |")
-
         md_text = "\n".join(md_rows)
         md_path = outp / f"{basename}_{metric}.md"
         md_path.write_text(md_text, encoding="utf-8")
-        print(f"Saved hedging CSV: {csv_path}")
-        print(f"Saved hedging Markdown: {md_path}")
+        print(f"Saved: {csv_path}")
+        print(f"Saved: {md_path}")
 
     return table
+
+# def make_hedging_table(
+#     hedge_res: pd.DataFrame,
+#     symbol: str,
+#     metric: str = "RMSE_hedge",  # or "avg_cost", "shortfall_prob", "shortfall_1pct"
+#     buckets: List[int] = (14, 28, 56),
+#     decimals: int = 4,
+#     out_dir: Optional[str] = None,
+#     basename: str = "table_hedging",
+# ) -> pd.DataFrame:
+#     """
+#     Build a paper-style hedging table analogous to IVRMSE tables:
+
+#       Columns: BS, JD, SV, QLBS, RLOP (only those present in hedge_res)
+#       Rows:    one per bucket, like 'SPY (τ=28d)'
+#       Extra cols: 'Metric' (e.g., 'RMSE_hedge'), 'Asset'
+#       Values:  chosen metric from hedge_res.
+
+#     Saves CSV + Markdown (bolds row minimum) if out_dir is set.
+#     """
+#     if hedge_res is None or hedge_res.empty:
+#         raise ValueError("hedge_res is empty in make_hedging_table.")
+
+#     present_models = sorted(hedge_res["model"].unique().tolist())
+#     # Only keep known models to stay consistent with IVRMSE layout
+#     models = [m for m in ["BS", "JD", "SV", "QLBS", "RLOP"] if m in present_models]
+
+#     bucket_labels = [f"{d}d" for d in buckets]
+#     rows = []
+
+#     for d in bucket_labels:
+#         row = {"Metric": metric, "Asset": f"{symbol} (τ={d})"}
+#         sub = hedge_res[hedge_res["bucket"] == d]
+#         for m in models:
+#             val = np.nan
+#             if not sub.empty:
+#                 sub_m = sub[sub["model"] == m]
+#                 if not sub_m.empty and metric in sub_m.columns:
+#                     val = float(sub_m[metric].iloc[0])
+#             row[m] = val
+#         rows.append(row)
+
+#     table = pd.DataFrame(rows)
+#     for m in models:
+#         table[m] = table[m].round(decimals)
+
+#     # Save CSV + Markdown with bold minima
+#     if out_dir:
+#         outp = Path(out_dir)
+#         outp.mkdir(parents=True, exist_ok=True)
+#         csv_path = outp / f"{basename}_{metric}.csv"
+#         table.to_csv(csv_path, index=False)
+
+#         header = ["Metric", "Asset"] + models
+#         md_rows = []
+#         md_rows.append("| " + " | ".join(header) + " |")
+#         md_rows.append("| " + " | ".join(["---"] * len(header)) + " |")
+
+#         for _, r in table.iterrows():
+#             vals = [r[m] for m in models]
+#             not_nan = [i for i, v in enumerate(vals) if pd.notna(v)]
+#             best_idx = None
+#             if not_nan:
+#                 best_idx = min(not_nan, key=lambda i: vals[i])
+#             cells = [str(r["Metric"]), str(r["Asset"])]
+#             for i, m in enumerate(models):
+#                 v = r[m]
+#                 if pd.isna(v):
+#                     cells.append("")
+#                 else:
+#                     s = f"{v:.{decimals}f}"
+#                     cells.append(f"**{s}**" if i == best_idx else s)
+#             md_rows.append("| " + " | ".join(cells) + " |")
+
+#         md_text = "\n".join(md_rows)
+#         md_path = outp / f"{basename}_{metric}.md"
+#         md_path.write_text(md_text, encoding="utf-8")
+#         print(f"Saved hedging CSV: {csv_path}")
+#         print(f"Saved hedging Markdown: {md_path}")
+
+#     return table
 
 def hedging_spy20():
     df = pd.read_csv("data/spy_preprocessed_calls_20q1.csv")
 
-    hedge_res = run_dynamic_hedging_for_symbol_period(
+    hedge_res = summarize_symbol_period_hedging(
         df_all=df,
         symbol="SPY",
         type="american",
@@ -1890,7 +2337,7 @@ def hedging_spy20():
     )
 
     # Primary dynamic-hedging table: RMSE_hedge
-    tbl_rmse = make_hedging_table(
+    tbl_rmse = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="SPY",
         metric="RMSE_hedge",
@@ -1901,7 +2348,7 @@ def hedging_spy20():
     )
 
     # Optional: cost and shortfall tables
-    tbl_cost = make_hedging_table(
+    tbl_cost = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="SPY",
         metric="avg_cost",
@@ -1910,7 +2357,7 @@ def hedging_spy20():
         out_dir="SPY_20Q1_baseline_v3",
         basename="table_hedging",
     )
-    tbl_shortfall = make_hedging_table(
+    tbl_shortfall = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="SPY",
         metric="shortfall_prob",
@@ -1928,7 +2375,7 @@ def hedging_spy20():
 def hedging_spy25():
     df = pd.read_csv("data/spy_preprocessed_calls_25.csv")
 
-    hedge_res = run_dynamic_hedging_for_symbol_period(
+    hedge_res = summarize_symbol_period_hedging(
         df_all=df,
         symbol="SPY",
         type="american",
@@ -1949,7 +2396,7 @@ def hedging_spy25():
     )
 
     # Primary dynamic-hedging table: RMSE_hedge
-    tbl_rmse = make_hedging_table(
+    tbl_rmse = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="SPY",
         metric="RMSE_hedge",
@@ -1960,7 +2407,7 @@ def hedging_spy25():
     )
 
     # Optional: cost and shortfall tables
-    tbl_cost = make_hedging_table(
+    tbl_cost = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="SPY",
         metric="avg_cost",
@@ -1969,7 +2416,7 @@ def hedging_spy25():
         out_dir="SPY_25Q2_baseline_v3",
         basename="table_hedging",
     )
-    tbl_shortfall = make_hedging_table(
+    tbl_shortfall = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="SPY",
         metric="shortfall_prob",
@@ -1988,7 +2435,7 @@ def hedging_spy25():
 def hedging_xop20():
     df = pd.read_csv("data/xop_preprocessed_calls_20q1.csv")
 
-    hedge_res = run_dynamic_hedging_for_symbol_period(
+    hedge_res = summarize_symbol_period_hedging(
         df_all=df,
         symbol="XOP",
         type="american",
@@ -2009,7 +2456,7 @@ def hedging_xop20():
     )
 
     # Primary dynamic-hedging table: RMSE_hedge
-    tbl_rmse = make_hedging_table(
+    tbl_rmse = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="XOP",
         metric="RMSE_hedge",
@@ -2020,7 +2467,7 @@ def hedging_xop20():
     )
 
     # Optional: cost and shortfall tables
-    tbl_cost = make_hedging_table(
+    tbl_cost = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="XOP",
         metric="avg_cost",
@@ -2029,7 +2476,7 @@ def hedging_xop20():
         out_dir="XOP_20Q1_baseline_v3",
         basename="table_hedging",
     )
-    tbl_shortfall = make_hedging_table(
+    tbl_shortfall = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="XOP",
         metric="shortfall_prob",
@@ -2048,7 +2495,7 @@ def hedging_xop20():
 def hedging_xop25():
     df = pd.read_csv("data/xop_preprocessed_calls_25.csv")
 
-    hedge_res = run_dynamic_hedging_for_symbol_period(
+    hedge_res = summarize_symbol_period_hedging(
         df_all=df,
         symbol="XOP",
         type="american",
@@ -2069,7 +2516,7 @@ def hedging_xop25():
     )
 
     # Primary dynamic-hedging table: RMSE_hedge
-    tbl_rmse = make_hedging_table(
+    tbl_rmse = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="XOP",
         metric="RMSE_hedge",
@@ -2080,7 +2527,7 @@ def hedging_xop25():
     )
 
     # Optional: cost and shortfall tables
-    tbl_cost = make_hedging_table(
+    tbl_cost = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="XOP",
         metric="avg_cost",
@@ -2089,7 +2536,7 @@ def hedging_xop25():
         out_dir="XOP_25Q2_baseline_v3",
         basename="table_hedging",
     )
-    tbl_shortfall = make_hedging_table(
+    tbl_shortfall = make_hedging_publication_table(
         hedge_res=hedge_res,
         symbol="XOP",
         metric="shortfall_prob",
