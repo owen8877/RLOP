@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Tuple, Optional
-
+import pickle
+from unittest import TestCase
 import numpy as np
 import pandas as pd
+from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 import re
 from datetime import datetime
+
+# Try SciPy for calibration; fall back to coarse grid if missing
+try:
+    from scipy.optimize import minimize
+
+    _HAVE_SCIPY = True
+except Exception:
+    _HAVE_SCIPY = False
 
 # ============================================================
 # Basic Black–76 pricing and IV inversion
