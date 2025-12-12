@@ -1415,7 +1415,7 @@ def hedging_spy20_feb():
         type="american",
         start_date="2020-02-01",
         end_date="2020-02-29",
-        buckets=[14,56,28],
+        buckets=[28],
         min_parity_pairs=4,
         tau_floor_days=3,
         n_paths=1000,
