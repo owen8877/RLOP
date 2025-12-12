@@ -539,14 +539,20 @@ def _minimize(func, x0, bounds):
 def _compute_atm_weights(calls: pd.DataFrame) -> np.ndarray:
     """
     Compute near-ATM weights:
-      - restrict to moneyness_F already in [0.9,1.1] outside
-      - inv_price = 1 / max(C_mid, 1)
-      - Gaussian in standardized moneyness.
+
+      - upstream we already restrict to 0.9 <= moneyness_F <= 1.1
+      - mild 1/sqrt(price) factor to avoid overweighting very cheap options
+      - Gaussian in standardized log-moneyness (ATM emphasized)
+
+    These same weights are used for BS / JD / Heston / QLBS / RLOP
+    bucket calibrations so that all models are tuned to the
+    hedging-relevant ATM band.
     """
     C = np.asarray(calls["C_mid"].to_numpy(dtype=float))
     m = np.asarray(calls["moneyness_F"].to_numpy(dtype=float))
 
-    inv_price = 1.0 / np.maximum(C, 1.0)
+    # 1/sqrt(price) with a floor at 1.0 to avoid huge weights on very tiny prices
+    inv_price = 1.0 / np.sqrt(np.maximum(C, 1.0))
 
     # standardize log-moneyness; use 20% vol as scale
     tau = np.asarray(calls["tau"].to_numpy(dtype=float))
@@ -857,7 +863,7 @@ def summarize_symbol_period_hedging(
           * restrict to near-ATM: 0.9 <= K/F <= 1.1
           * world volatility = median market IV over this set
           * world S0, r      = medians of F, r over this set
-          * calibrate BS / JD / SV on this set with ATM weights
+          * calibrate BS / JD / SV on this set with ATM-centric weights
           * calibrate QLBS / RLOP on a representative day within this set
           * simulate one GBM world and delta-hedge a short call for:
               - Whole sample
@@ -965,6 +971,9 @@ def summarize_symbol_period_hedging(
         # weights for calibration
         w = _compute_atm_weights(calls_b)
 
+        # common risk-aversion parameter for RL models (QLBS & RLOP use the same λ)
+        risk_lambda_common = 0.10  # <<<<<< CHANGED / NEW
+
         # BS calibration
         if run_bs:
             sig_bs = fit_sigma_bucket_weighted(calls_b, w)
@@ -994,7 +1003,8 @@ def summarize_symbol_period_hedging(
             calib = calls_b.copy()
 
         if run_qlbs and QLBSModel is not None:
-            risk_lambda_q = 0.01
+            risk_lambda_q = risk_lambda_common  # <<<<<< CHANGED (was 0.01)
+
             spot_q = float(calib["F"].iloc[0])
             r_q = float(calib["r"].iloc[0])
             time_to_expiries = calib["tau"].to_numpy(dtype=float)
@@ -1029,10 +1039,11 @@ def summarize_symbol_period_hedging(
                 "r": r_q,
             }
             if print_info:
-                print(f"[{symbol} {dlab}] QLBS sigma={q_res.sigma:.4f}, mu={q_res.mu:.4f}")
+                print(f"[{symbol} {dlab}] QLBS sigma={q_res.sigma:.4f}, mu={q_res.mu:.4f}, λ={risk_lambda_q:.2f}")
 
         if run_rlop and RLOPModel is not None:
-            risk_lambda_r = 0.10
+            risk_lambda_r = risk_lambda_common  # <<<<<< CHANGED (now explicitly tied)
+
             spot_r = float(calib["F"].iloc[0])
             r_r = float(calib["r"].iloc[0])
             time_to_expiries = calib["tau"].to_numpy(dtype=float)
@@ -1067,7 +1078,7 @@ def summarize_symbol_period_hedging(
                 "r": r_r,
             }
             if print_info:
-                print(f"[{symbol} {dlab}] RLOP sigma={r_res.sigma:.4f}, mu={r_res.mu:.4f}")
+                print(f"[{symbol} {dlab}] RLOP sigma={r_res.sigma:.4f}, mu={r_res.mu:.4f}, λ={risk_lambda_r:.2f}")
 
     # --- Hedging metrics per bucket & moneyness section ---
     moneyness_sections = [
@@ -1156,7 +1167,7 @@ def summarize_symbol_period_hedging(
             Qmodel = qfit["model"]
             sigma_q = qfit["sigma"]
             mu_q = qfit["mu"]
-            risk_lambda_q = qfit["risk_lambda"]
+            risk_lambda_q = qfit["risk_lambda"]   # now 0.10 for all buckets
             friction_q = qfit["friction"]
             r_q = qfit["r"]
 
@@ -1404,7 +1415,7 @@ def hedging_spy20_feb():
         type="american",
         start_date="2020-02-01",
         end_date="2020-02-29",
-        buckets=[28],
+        buckets=[14,56,28],
         min_parity_pairs=4,
         tau_floor_days=3,
         n_paths=1000,
