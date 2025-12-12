@@ -1613,11 +1613,9 @@ def hedging_xop25_jun():
     print(tbl_cost)
     print(tbl_shortfall)
 
-
-if __name__ == "__main__":
-    # Example: uncomment one of these to run:
-    hedging_spy20_feb()
-    hedging_spy25_jun()
-    # hedging_xop20_feb()
-    # hedging_xop25_jun()
-    pass
+class Test(TestCase):
+    def test_main(self):
+        hedging_spy20_feb()
+        # hedging_spy25_jun()
+        # hedging_xop20_feb()
+        # hedging_xop25_jun()
