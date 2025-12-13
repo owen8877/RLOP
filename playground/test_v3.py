@@ -2040,7 +2040,7 @@ def hedging_spy20():
     #     metric="RMSE_hedge",
     #     buckets=[14, 28, 56],
     #     decimals=4,
-    #     out_dir="SPY_20Q1_baseline_v4",
+    #     out_dir="SPY_20Q1_baseline_v5",
     #     basename="table_hedging",
     # )
 
@@ -2051,7 +2051,7 @@ def hedging_spy20():
     #     metric="avg_cost",
     #     buckets=[14, 28, 56],
     #     decimals=6,
-    #     out_dir="SPY_20Q1_baseline_v4",
+    #     out_dir="SPY_20Q1_baseline_v5",
     #     basename="table_hedging",
     # )
     # tbl_shortfall = make_hedging_table(
@@ -2060,7 +2060,7 @@ def hedging_spy20():
     #     metric="shortfall_prob",
     #     buckets=[14, 28, 56],
     #     decimals=3,
-    #     out_dir="SPY_20Q1_baseline_v4",
+    #     out_dir="SPY_20Q1_baseline_v5",
     #     basename="table_hedging",
     # )
 
@@ -2113,7 +2113,7 @@ def hedging_spy25():
         metric="RMSE_hedge",
         buckets=[14, 28, 56],
         decimals=4,
-        out_dir="SPY_25Q2_baseline_v4",
+        out_dir="SPY_25Q2_baseline_v5",
         basename="table_hedging",
     )
 
@@ -2124,7 +2124,7 @@ def hedging_spy25():
         metric="avg_cost",
         buckets=[14, 28, 56],
         decimals=6,
-        out_dir="SPY_25Q2_baseline_v4",
+        out_dir="SPY_25Q2_baseline_v5",
         basename="table_hedging",
     )
     tbl_shortfall = make_hedging_table(
@@ -2133,7 +2133,7 @@ def hedging_spy25():
         metric="shortfall_prob",
         buckets=[14, 28, 56],
         decimals=3,
-        out_dir="SPY_25Q2_baseline_v4",
+        out_dir="SPY_25Q2_baseline_v5",
         basename="table_hedging",
     )
 
@@ -2176,7 +2176,7 @@ def hedging_xop20():
     #     metric="RMSE_hedge",
     #     buckets=[14, 28, 56],
     #     decimals=4,
-    #     out_dir="XOP_20Q1_baseline_v4",
+    #     out_dir="XOP_20Q1_baseline_v5",
     #     basename="table_hedging",
     # )
 
@@ -2187,7 +2187,7 @@ def hedging_xop20():
     #     metric="avg_cost",
     #     buckets=[14, 28, 56],
     #     decimals=6,
-    #     out_dir="XOP_20Q1_baseline_v4",
+    #     out_dir="XOP_20Q1_baseline_v5",
     #     basename="table_hedging",
     # )
     # tbl_shortfall = make_hedging_table(
@@ -2196,7 +2196,7 @@ def hedging_xop20():
     #     metric="shortfall_prob",
     #     buckets=[14, 28, 56],
     #     decimals=3,
-    #     out_dir="XOP_20Q1_baseline_v4",
+    #     out_dir="XOP_20Q1_baseline_v5",
     #     basename="table_hedging",
     # )
 
@@ -2249,7 +2249,7 @@ def hedging_xop25():
         metric="RMSE_hedge",
         buckets=[14, 28, 56],
         decimals=4,
-        out_dir="XOP_25Q2_baseline_v4",
+        out_dir="XOP_25Q2_baseline_v5",
         basename="table_hedging",
     )
 
@@ -2260,7 +2260,7 @@ def hedging_xop25():
         metric="avg_cost",
         buckets=[14, 28, 56],
         decimals=6,
-        out_dir="XOP_25Q2_baseline_v4",
+        out_dir="XOP_25Q2_baseline_v5",
         basename="table_hedging",
     )
     tbl_shortfall = make_hedging_table(
@@ -2269,7 +2269,7 @@ def hedging_xop25():
         metric="shortfall_prob",
         buckets=[14, 28, 56],
         decimals=3,
-        out_dir="XOP_25Q2_baseline_v4",
+        out_dir="XOP_25Q2_baseline_v5",
         basename="table_hedging",
     )
 
@@ -2299,7 +2299,7 @@ def main_spy20():
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="SPY_20Q1_baseline_v4",  # outputs saved here
+        out_dir="SPY_20Q1_baseline_v5",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -2309,7 +2309,7 @@ def main_spy20():
         measure="equal",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_20Q1_baseline_v4",
+        out_dir="SPY_20Q1_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2320,7 +2320,7 @@ def main_spy20():
         measure="pooled",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_20Q1_baseline_v4",
+        out_dir="SPY_20Q1_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2349,7 +2349,7 @@ def main_spy25():
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="SPY_25Q2_baseline_v4",  # outputs saved here
+        out_dir="SPY_25Q2_baseline_v5",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -2359,7 +2359,7 @@ def main_spy25():
         measure="equal",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_25Q2_baseline_v4",
+        out_dir="SPY_25Q2_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2370,7 +2370,7 @@ def main_spy25():
         measure="pooled",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_25Q2_baseline_v4",
+        out_dir="SPY_25Q2_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2398,7 +2398,7 @@ def main_xop20():
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="XOP_20Q1_baseline_v4",  # outputs saved here
+        out_dir="XOP_20Q1_baseline_v5",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -2408,7 +2408,7 @@ def main_xop20():
         measure="equal",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="XOP_20Q1_baseline_v4",
+        out_dir="XOP_20Q1_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2419,7 +2419,7 @@ def main_xop20():
         measure="pooled",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="XOP_20Q1_baseline_v4",
+        out_dir="XOP_20Q1_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2448,7 +2448,7 @@ def main_xop25():
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="XOP_25Q2_baseline_v4",  # outputs saved here
+        out_dir="XOP_25Q2_baseline_v5",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -2458,7 +2458,7 @@ def main_xop25():
         measure="equal",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="XOP_25Q2_baseline_v4",
+        out_dir="XOP_25Q2_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2469,7 +2469,7 @@ def main_xop25():
         measure="pooled",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="XOP_25Q2_baseline_v4",
+        out_dir="XOP_25Q2_baseline_v5",
         basename="table_ivrmse",
     )
 
@@ -2498,7 +2498,7 @@ def main_btc():
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="BTC_09NOV25_v4",  # outputs saved here
+        out_dir="BTC_09NOV25_v5",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -2508,7 +2508,7 @@ def main_btc():
         measure="equal",
         buckets=[7, 30, 90],
         decimals=2,
-        out_dir="BTC_09NOV25_v4",
+        out_dir="BTC_09NOV25_v5",
         basename="table_ivrmse",
     )
 
@@ -2519,7 +2519,7 @@ def main_btc():
         measure="pooled",
         buckets=[7, 30, 90],
         decimals=2,
-        out_dir="BTC_09NOV25_v4",
+        out_dir="BTC_09NOV25_v5",
         basename="table_ivrmse",
     )
 
@@ -2540,4 +2540,4 @@ class Test(TestCase):
         #hedging_xop25()
 
 
-# python -m unittest playground/options_pricing_baselines_v4.py
+# python -m unittest playground/options_pricing_baselines_v5.py
