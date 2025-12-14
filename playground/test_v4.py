@@ -1254,7 +1254,7 @@ def hedging_spy20():
         run_qlbs=True,
         run_rlop=True,
         # Saving
-        out_dir="SPY_20Q1_hedging_v6",
+        out_dir="SPY_20Q1_hedging_v7",
         run_tag=None,
     )
 
@@ -1281,7 +1281,7 @@ def hedging_spy20():
         metric="RMSE_hedge",
         buckets=[28],
         decimals=4,
-        out_dir="SPY_20Q1_hedging_v6",
+        out_dir="SPY_20Q1_hedging_v7",
         basename="table_hedging_pub",
     )
     print("\nPublication-style hedging table (aligned with IVRMSE layout):")
