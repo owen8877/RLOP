@@ -1239,7 +1239,7 @@ def hedging_spy20():
         start_date="2020-01-06",
         end_date="2020-03-30",
         buckets=(28,),
-        n_rep_days=5,
+        n_rep_days=60,
         rep_day_mode="even",
         moneyness_targets=(0.90, 0.97, 1.00, 1.03, 1.10),
         calibrate_on="expiry",
