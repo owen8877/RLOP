@@ -1435,19 +1435,33 @@ def hedging_spy20():
     hedge_res = run_dynamic_hedging_spy_like(df_all=df, cfg=cfg)
 
     print("\nDynamic hedging summary (SPY 20Q1):")
+    
+    def _summ(g: pd.DataFrame) -> pd.Series:
+        err = g["error_T"].to_numpy(dtype=float)
+        var1 = float(np.quantile(err, 0.01))
+        tail = err[err <= var1]
+        cvar1 = float(np.mean(tail)) if tail.size else var1
+        return pd.Series({
+            "RMSE": float(np.sqrt(np.mean(err * err))),
+            "mean_err": float(np.mean(err)),
+            "std_err": float(np.std(err, ddof=0)),
+            "avg_cost": float(g["cost_total"].mean()),
+            "shortfall_prob": float(np.mean(err < 0.0)),
+            "VaR_1pct": var1,
+            "CVaR_1pct": cvar1,
+            "N": int(len(err)),
+        })
+    
     summary = (
         hedge_res
         .groupby(["bucket", "moneyness_target", "model"], as_index=False)
-        .agg(
-            RMSE_mean=("RMSE_hedge", "mean"),
-            RMSE_std=("RMSE_hedge", "std"),
-            cost_mean=("avg_cost", "mean"),
-            shortfall_mean=("shortfall_prob", "mean"),
-            N=("RMSE_hedge", "size"),
-        )
-        .sort_values(["bucket", "moneyness_target", "RMSE_mean"])
+        .apply(_summ)
+        .reset_index(drop=True)
+        .sort_values(["bucket", "moneyness_target", "RMSE"])
     )
+    
     print(summary.to_string(index=False))
+
 
     for met in ["RMSE_hedge", "avg_cost", "shortfall_prob", "VaR_1pct", "CVaR_1pct"]:
         tbl = make_hedging_publication_table(
