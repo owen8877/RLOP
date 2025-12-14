@@ -1287,6 +1287,63 @@ def hedging_spy20():
     print("\nPublication-style hedging table (aligned with IVRMSE layout):")
     print(pub_tbl.to_string(index=False))
 
+
+def hedging_xop20():
+    df = pd.read_csv("data/xop_preprocessed_calls_20q1.csv")
+
+    cfg = HedgingRunConfig(
+        symbol="XOP",
+        start_date="2020-01-06",
+        end_date="2020-03-30",
+        buckets=(28,),
+        n_rep_days=60,
+        rep_day_mode="even",
+        moneyness_targets=(0.90, 0.97, 1.00, 1.03, 1.10),
+        calibrate_on="expiry",
+        sigma_true_mode="expiry_atm",  # good default for stability/fairness
+        n_steps=28,
+        n_paths=2000,
+        friction=4e-3,
+        seed=123,
+        run_bs=True,
+        run_jd=True,
+        run_heston=True,
+        run_qlbs=True,
+        run_rlop=True,
+        # Saving
+        out_dir="XOP_20Q1_hedging_v7",
+        run_tag=None,
+    )
+
+    hedge_res = run_dynamic_hedging_spy_like(df_all=df, cfg=cfg)
+
+    print("\nDynamic hedging summary (XOP 20Q1):")
+    summary = (
+        hedge_res
+        .groupby(["bucket", "moneyness_target", "model"], as_index=False)
+        .agg(
+            RMSE_mean=("RMSE_hedge", "mean"),
+            RMSE_std=("RMSE_hedge", "std"),
+            cost_mean=("avg_cost", "mean"),
+            shortfall_mean=("shortfall_prob", "mean"),
+            N=("RMSE_hedge", "size"),
+        )
+        .sort_values(["bucket", "moneyness_target", "RMSE_mean"])
+    )
+    print(summary.to_string(index=False))
+
+    pub_tbl = make_hedging_publication_table(
+        hedge_res=hedge_res,
+        symbol="XOP",
+        metric="RMSE_hedge",
+        buckets=[28],
+        decimals=4,
+        out_dir="XOP_20Q1_hedging_v7",
+        basename="table_hedging_pub",
+    )
+    print("\nPublication-style hedging table (aligned with IVRMSE layout):")
+    print(pub_tbl.to_string(index=False))
+
 class Test(TestCase):
     def test_main(self):
         #main_spy20()
@@ -1294,9 +1351,9 @@ class Test(TestCase):
         #main_xop20()
         #main_xop25()
         #main_btc()
-        hedging_spy20()
+        #hedging_spy20()
         #hedging_spy25()
-        #hedging_xop20()
+        hedging_xop20()
         #hedging_xop25()
 
 
