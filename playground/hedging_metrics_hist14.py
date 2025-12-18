@@ -1013,7 +1013,7 @@ def run_dynamic_hedging_spy_like(df_all: pd.DataFrame, cfg: HedgingRunConfig) ->
                 Qmodel = QLBSModel(
                     is_call_option=True,
                     checkpoint=cfg.qlbs_checkpoint_tmpl.format(rl=cfg.qlbs_risk_lambda),
-                    anchor_T=28 / 252,
+                    anchor_T=14 / 252,
                 )
                 time_to_exp = cal_df["tau"].to_numpy(dtype=float)
                 strikes = cal_df["strike"].to_numpy(dtype=float)
@@ -1038,7 +1038,7 @@ def run_dynamic_hedging_spy_like(df_all: pd.DataFrame, cfg: HedgingRunConfig) ->
                 Rmodel = RLOPModel(
                     is_call_option=True,
                     checkpoint=cfg.rlop_checkpoint,
-                    anchor_T=28 / 252,
+                    anchor_T=14 / 252,
                 )
                 time_to_exp = cal_df["tau"].to_numpy(dtype=float)
                 strikes = cal_df["strike"].to_numpy(dtype=float)
