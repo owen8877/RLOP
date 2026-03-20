@@ -55,7 +55,14 @@ def torch_delta(S, _, T, K, r, __, sigma, ___, ____):
 
 
 class GaussianPolicy_v6(Policy):
-    def __init__(self, is_call_option: bool, from_filename: str | None = None, lr: float = 1e-3, reset_optimizer=False):
+    def __init__(
+        self,
+        is_call_option: bool,
+        from_filename: str | None = None,
+        lr: float = 1e-3,
+        reset_optimizer=False,
+        network_depth: int = 3,
+    ):
         super().__init__()
 
         self.is_call_option = is_call_option
@@ -65,10 +72,10 @@ class GaussianPolicy_v6(Policy):
             output_dim=1,
             transform_pair=(in_transform, out_transform),
             activation="elu",
-            groups=3,
+            groups=network_depth,
             layer_per_group=3,
         )
-        self.theta_sigma = StrictResNet(9, 10, groups=2, layer_per_group=2)
+        self.theta_sigma = StrictResNet(9, 10, groups=network_depth - 1, layer_per_group=2)
         self.optimizer = Adam(chain(self.theta_mu.parameters(), self.theta_sigma.parameters()), lr=lr)
         if from_filename is not None:
             self.load(from_filename, reset_optimizer=reset_optimizer)

@@ -35,7 +35,7 @@ def in_transform(x: torch.Tensor) -> torch.Tensor:
 
 
 def out_transform(y: torch.Tensor) -> torch.Tensor:
-    return 1 * torch.sigmoid(y)
+    return 2 * torch.sigmoid(y)
     # return Func.elu(y) + 1.01
     # return torch.exp(y)
 
@@ -68,14 +68,14 @@ class GaussianPolicy_v7(Policy):
             activation="elu",
             groups=3,
             layer_per_group=3,
-        ).cuda()
-        self.theta_sigma = StrictResNet(9, 10, groups=2, layer_per_group=2).cuda()
+        )
+        self.theta_sigma = StrictResNet(9, 10, groups=2, layer_per_group=2)
         self.optimizer = Adam(chain(self.theta_mu.parameters(), self.theta_sigma.parameters()), lr=lr)
         if from_filename is not None:
             self.load(from_filename, reset_optimizer=reset_optimizer)
 
     def _gauss_param(self, tensor: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        tensor = tensor.float().cuda()
+        tensor = tensor.float()
         _mu = self.theta_mu(tensor)[:, 0]
 
         if torch.any(torch.isnan(_mu)):
@@ -90,8 +90,8 @@ class GaussianPolicy_v7(Policy):
         return self.batch_action(state.to_tensor(info), random=True, return_pre_action=return_pre_action)
 
     def update(self, delta, _action, state: State, info):
-        delta = torch.tensor(delta).float().cuda()  # type: ignore
-        _action = torch.tensor(_action).float().cuda()  # type: ignore
+        delta = torch.tensor(delta).float()  # type: ignore
+        _action = torch.tensor(_action).float()  # type: ignore
         tensor = state.to_tensor(info)
 
         def loss_func():
@@ -109,10 +109,10 @@ class GaussianPolicy_v7(Policy):
         with torch.no_grad():
             mu, sigma = self._gauss_param(state_info_tensor)
             if random:
-                _action = torch.randn(mu.shape).cuda() * sigma + mu
+                _action = torch.randn(mu.shape) * sigma + mu
             else:
                 _action = mu
-            S, _, T, K, r, __, discard, ___, ____ = [state_info_tensor[:, i].cuda() for i in range(9)]
+            S, _, T, K, r, __, discard, ___, ____ = [state_info_tensor[:, i] for i in range(9)]
             action = torch_delta(S, _, T, K, r, __, _action, ___, ____)
             if return_pre_action:
                 return action, _action
@@ -133,11 +133,11 @@ class GaussianPolicy_v7(Policy):
     def load(self, filename: str, reset_optimizer=False):
         state_dict = torch.load(filename)
         self.theta_sigma.load_state_dict(state_dict["sigma_net"])
-        self.theta_sigma.cuda()
+        self.theta_sigma
         self.theta_sigma.eval()
 
         self.theta_mu.load_state_dict(state_dict["mu_net"])
-        self.theta_mu.cuda()
+        self.theta_mu
         self.theta_mu.eval()
 
         if not reset_optimizer:
@@ -157,7 +157,7 @@ class NNBaseline_v7(Baseline):
             activation="elu",
             groups=3,
             layer_per_group=3,
-        ).cuda()
+        )
         self.optimizer = Adam(self.net.parameters(), lr=lr)
         if from_filename is not None:
             self.load(from_filename, reset_optimizer=reset_optimizer)
@@ -170,8 +170,8 @@ class NNBaseline_v7(Baseline):
         return self.batch_estimate(state.to_tensor(info))
 
     def update(self, G: np.ndarray, state: State, info: Info):
-        G = torch.tensor(G).float().cuda()  # type: ignore
-        tensor = state.to_tensor(info).float().cuda()
+        G = torch.tensor(G).float()  # type: ignore
+        tensor = state.to_tensor(info).float()
 
         def loss_func():
             tensor1: torch.tensor = self._predict(tensor)  # type: ignore
@@ -190,7 +190,7 @@ class NNBaseline_v7(Baseline):
 
     def batch_estimate(self, state_info_tensor, return_latent_vol: bool = False):
         with torch.no_grad():
-            state_info_tensor = state_info_tensor.float().cuda()
+            state_info_tensor = state_info_tensor.float()
             return self._predict(state_info_tensor, return_latent_vol=return_latent_vol)
 
     def save(self, filename: str):
@@ -200,7 +200,7 @@ class NNBaseline_v7(Baseline):
     def load(self, filename: str, reset_optimizer=False):
         state_dict = torch.load(filename)
         self.net.load_state_dict(state_dict["net"])
-        self.net.cuda()
+        self.net
         self.net.eval()
 
         if not reset_optimizer:
@@ -216,8 +216,7 @@ class PriceEstimator_v7(PriceEstimator):
 
     def _predict(self, tensor, return_latent_vol: bool = False):
         y = self.net(tensor)
-        S, _, T, K, r, __, discard, ___, ____ = [tensor[:, i].cuda() for i in range(9)]
-        # y = y * 0 + torch.unsqueeze(__, 0)
+        S, _, T, K, r, __, discard, ___, ____ = [tensor[:, i] for i in range(9)]
         price = torch_price(S, _, T, K, r, __, y[:, 0], ___, ____)
         if return_latent_vol:
             return price, y[:, 0]
@@ -228,8 +227,8 @@ class PriceEstimator_v7(PriceEstimator):
         return self.batch_estimate(state.to_tensor(info))
 
     def update(self, delta_: np.ndarray, state: State, info: Info):
-        # loss = torch.tensor(loss_).float().cuda()
-        # tensor = state.to_tensor(info).float().cuda()
+        # loss = torch.tensor(loss_).float()
+        # tensor = state.to_tensor(info).float()
 
         # def loss_func():
         #     tensor1: torch.tensor = self._predict(tensor)  # type: ignore
@@ -242,16 +241,13 @@ class PriceEstimator_v7(PriceEstimator):
         # loss = self.optimizer.step(loss_func)  # type: ignore
         # return loss
 
-        delta = torch.tensor(delta_).float().cuda()
-        tensor = state.to_tensor(info).float().cuda()
+        delta = torch.tensor(delta_).float()
+        tensor = state.to_tensor(info).float()
 
         def loss_func():
             tensor1: torch.tensor = self._predict(tensor)  # type: ignore
             target = tensor1.detach() + delta
 
-            # I = torch.sum(Func.leaky_relu(target - tensor1, negative_slope=0.5) ** 2)
-            # I = torch.sum(Func.elu(-(target - tensor1)) ** 2)
-            # I = torch.sum(torch.abs(target - tensor1))
             I = torch.sum((target - tensor1) ** 2)
             I.backward()
             return I
@@ -262,7 +258,7 @@ class PriceEstimator_v7(PriceEstimator):
 
     def batch_estimate(self, state_info_tensor, return_latent_vol: bool = False):
         with torch.no_grad():
-            state_info_tensor = state_info_tensor.float().cuda()
+            state_info_tensor = state_info_tensor.float()
             return self._predict(state_info_tensor, return_latent_vol=return_latent_vol)
 
     def save(self, filename: str):
@@ -274,7 +270,7 @@ class PriceEstimator_v7(PriceEstimator):
         raise
         state_dict = torch.load(filename)
         self.net.load_state_dict(state_dict["net"])
-        self.net.cuda()
+        self.net
         self.net.eval()
 
         if not reset_optimizer:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import pickle
 from unittest import TestCase
+from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
@@ -1065,7 +1066,7 @@ def summarize_symbol_period_ivrmse(
 
                 Rmodel = RLOPModel(
                     is_call_option=True,
-                    checkpoint="trained_model/testr9/policy_1.pt",
+                    checkpoint="trained_model/testr12/policy_1.pt",
                     anchor_T=28 / 252,
                 )
                 # spot = (g["F"] * np.exp(-g["r"] * g["tau"])).iloc[0]
@@ -1073,8 +1074,8 @@ def summarize_symbol_period_ivrmse(
                 time_to_expiries = g["tau"].to_numpy()
                 strikes = g["strike"].to_numpy()
                 r = g["r"].iloc[0]
-                risk_lambda = 0.1
-                friction = 4e-3
+                risk_lambda = 0
+                friction = 1e-1
                 observed_prices = g["C_mid"].to_numpy()
 
                 moneyness = np.log(g["strike"] / g["F"]) / (np.sqrt(g["tau"]) * 0.2)
@@ -1092,16 +1093,15 @@ def summarize_symbol_period_ivrmse(
                         ##########################################################################
                         # NOTE: different combinations of weights, can try which is best
                         ##########################################################################
-                        # weights=inv_price * np.exp(-(moneyness.to_numpy() ** 2) * 0.5),
-                        weights=inv_price,
+                        # weights=inv_price * 0 + 1,
+                        weights=inv_price * np.exp(-(moneyness.to_numpy() ** 2) * 5),  # type: ignore
+                        # weights=inv_price,
                         # weights=np.exp(-(moneyness.to_numpy() ** 2) * 0.5),
                         ##########################################################################
-                        sigma_guess=0.3,
+                        sigma_guess=-1,
                         mu_guess=0,
                         n_epochs=2000,
                     )
-                    # import pdb
-                    # pdb.set_trace()
                     # fig, axs = plt.subplots(1, 2, figsize=(10, 4))
                     # for tau, _df in g.groupby("tau"):
                     #     print(tau)
@@ -1112,9 +1112,9 @@ def summarize_symbol_period_ivrmse(
                     #     )
                     # plt.legend()
                     # plt.show()
-                    # if result.sigma > 3:
-                    #     import pdb
-                    #     pdb.set_trace()
+                    # import pdb
+
+                    # pdb.set_trace()
 
                     def rlop_price(F, K, tau, r):
                         _result = Rmodel.predict(
@@ -1367,14 +1367,14 @@ def main_spy20():
         buckets=[14, 28, 56],
         min_parity_pairs=4,
         tau_floor_days=3,
-        run_bs=True,
-        run_jd=True,
-        run_heston=True,
-        run_qlbs=True,
+        run_bs=False,
+        run_jd=False,
+        run_heston=False,
+        run_qlbs=False,
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="SPY_20Q1_baseline_v3",  # outputs saved here
+        out_dir="SPY_20Q1_baseline_v3_rlopnew",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -1384,7 +1384,7 @@ def main_spy20():
         measure="equal",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_20Q1_baseline_v3",
+        out_dir="SPY_20Q1_baseline_v3_rlopnew",
         basename="table_ivrmse",
     )
 
@@ -1395,7 +1395,7 @@ def main_spy20():
         measure="pooled",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_20Q1_baseline_v3",
+        out_dir="SPY_20Q1_baseline_v3_rlopnew",
         basename="table_ivrmse",
     )
 
@@ -1413,18 +1413,18 @@ def main_spy25():
         symbol="SPY",
         type="american",
         start_date="2025-04-01",
-        end_date="2025-06-30",
+        end_date="2025-04-02",
         buckets=[14, 28, 56],
         min_parity_pairs=4,
         tau_floor_days=3,
-        run_bs=True,
-        run_jd=True,
-        run_heston=True,
-        run_qlbs=True,
+        run_bs=False,
+        run_jd=False,
+        run_heston=False,
+        run_qlbs=False,
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="SPY_25Q2_baseline_v3",  # outputs saved here
+        out_dir="SPY_25Q2_baseline_v3_rlopnew",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -1434,7 +1434,7 @@ def main_spy25():
         measure="equal",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_25Q2_baseline_v3",
+        out_dir="SPY_25Q2_baseline_v3_rlopnew",
         basename="table_ivrmse",
     )
 
@@ -1445,7 +1445,7 @@ def main_spy25():
         measure="pooled",
         buckets=[14, 28, 56],
         decimals=2,
-        out_dir="SPY_25Q2_baseline_v3",
+        out_dir="SPY_25Q2_baseline_v3_rlopnew",
         basename="table_ivrmse",
     )
 
@@ -1566,14 +1566,14 @@ def main_btc():
         buckets=[7, 30, 90],
         min_parity_pairs=4,
         tau_floor_days=3,
-        run_bs=True,
-        run_jd=True,
-        run_heston=True,
-        run_qlbs=True,
+        run_bs=False,
+        run_jd=False,
+        run_heston=False,
+        run_qlbs=False,
         run_rlop=True,
         show_progress=True,
         print_daily=True,
-        out_dir="BTC_09NOV25_v3",  # outputs saved here
+        out_dir="BTC_09NOV25_v3_rlopnew",  # outputs saved here
     )
 
     # PRIMARY (paper): equal-day mean table
@@ -1583,7 +1583,7 @@ def main_btc():
         measure="equal",
         buckets=[7, 30, 90],
         decimals=2,
-        out_dir="BTC_09NOV25_v3",
+        out_dir="BTC_09NOV25_v3_rlopnew",
         basename="table_ivrmse",
     )
 
@@ -1594,7 +1594,7 @@ def main_btc():
         measure="pooled",
         buckets=[7, 30, 90],
         decimals=2,
-        out_dir="BTC_09NOV25_v3",
+        out_dir="BTC_09NOV25_v3_rlopnew",
         basename="table_ivrmse",
     )
 
@@ -1604,7 +1604,7 @@ def main_btc():
 
 class Test(TestCase):
     def test_main(self):
-        main_spy20()
+        # main_spy20()
         main_spy25()
         main_xop20()
         main_xop25()

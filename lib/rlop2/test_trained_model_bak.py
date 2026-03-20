@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 
 
 from .bs import BSBaseline
-from .nn_v7_cpu import GaussianPolicy_v7, PriceEstimator_v7_grad_fn
+from .nn_v6_cpu import GaussianPolicy_v6, PriceEstimator_v6_grad_fn
 
 
 @dataclass
@@ -23,12 +23,12 @@ class QLBSFitResult:
 class RLOPModel:
     def __init__(self, is_call_option: bool, checkpoint: str, anchor_T: float):
         assert is_call_option, "Only call option is supported in this model."
-        self.nn_policy = GaussianPolicy_v7(is_call_option=is_call_option, from_filename=checkpoint)
-        self.nn_price_estimator = PriceEstimator_v7_grad_fn(self.nn_policy.theta_mu, self.nn_policy.optimizer)
+        self.nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=checkpoint)
+        self.nn_price_estimator = PriceEstimator_v6_grad_fn(self.nn_policy.theta_mu, self.nn_policy.optimizer)
         self.anchor_T = anchor_T
 
     def sigma_transform(self, sigma_raw: torch.Tensor) -> torch.Tensor:
-        return torch.sigmoid(sigma_raw) * 2 + 0.01
+        return torch.sigmoid(sigma_raw) * 5 + 0.01
         # return Func.elu(sigma_raw) + 1.01
 
     def fit(
@@ -49,7 +49,8 @@ class RLOPModel:
         assert len(observed_prices) == N, "Length of observed_prices must match strikes"
         assert len(weights) == N, "Length of weights must match strikes"
 
-        sigma = torch.tensor(sigma_guess, requires_grad=True, dtype=torch.float32)
+        assert sigma_guess > 0
+        sigma = torch.tensor(sp.special.logit(sigma_guess), requires_grad=True, dtype=torch.float32)
         mu = torch.tensor(mu_guess, requires_grad=True, dtype=torch.float32)
         optimizer = torch.optim.Adam([sigma, mu], lr=0.1)
         # optimizer = torch.optim.LBFGS([sigma, mu], lr=0.1, max_iter=20, line_search_fn="strong_wolfe")
@@ -60,11 +61,7 @@ class RLOPModel:
         _scaled_rs = r * _scaled_tte
         _scaled_risk_lambdas = torch.full((N,), 0, dtype=torch.float32)
         _scaled_frictions = torch.full((N,), friction, dtype=torch.float32)
-        _scaled_weights = torch.tensor(weights * np.power(spot, 2), dtype=torch.float32)
-
-        print(_scaled_strikes)
-        print(_scaled_prices)
-        print(_scaled_tte)
+        _scaled_weights = torch.tensor(weights * np.sqrt(spot), dtype=torch.float32)
 
         _zeros, _ones = torch.zeros(N, dtype=torch.float32), torch.ones(N, dtype=torch.float32)
 
@@ -76,8 +73,8 @@ class RLOPModel:
                     _ones * self.anchor_T,  # remaining_real_time
                     _scaled_strikes,  # strike
                     _scaled_rs,
-                    (mu * _ones),  # mu
-                    (self.sigma_transform(sigma) * torch.sqrt(_ones)),  # sigma
+                    (mu * _scaled_tte),  # mu
+                    (self.sigma_transform(sigma) * torch.sqrt(_scaled_tte)),  # sigma
                     _scaled_risk_lambdas,  # risk_lambda
                     _scaled_frictions,  # friction
                 ],
@@ -105,7 +102,7 @@ class RLOPModel:
                 print("Early stopping as loss is sufficiently small.")
                 break
 
-            if epoch > 100 and l.item() > loss_history[-100] * 0.999:
+            if epoch > 100 and l.item() > loss_history[-100] * 0.9:
                 print("Early stopping as loss has not decreased sufficiently.")
                 break
             loss_history.append(l.item())
@@ -140,9 +137,8 @@ class RLOPModel:
 
         N = len(strikes)
         _scaled_strikes = torch.tensor(strikes / spot, dtype=torch.float32)
-        # _scaled_rs = torch.tensor(r * time_to_expiries, dtype=torch.float32)
+        _scaled_rs = torch.tensor(r * time_to_expiries, dtype=torch.float32)
         _scaled_tte = torch.tensor(time_to_expiries / self.anchor_T, dtype=torch.float32)
-        _scaled_rs = r * _scaled_tte
         _scaled_risk_lambdas = torch.full((N,), 0, dtype=torch.float32)
         _scaled_frictions = torch.full((N,), friction * spot, dtype=torch.float32)
 
@@ -219,19 +215,19 @@ class RLOPModel:
 class TestTrainedModel(TestCase):
     def test_load_models(self):
         # setup hyperparameters
-        r = 0.04  # interest rate, annualized
-        friction = 1e-1  # transaction cost per unit traded
+        r = 0.02  # interest rate, annualized
+        friction = 2e-3  # transaction cost per unit traded
         is_call_option = True  # has to be call option for this test
         risk_lambda = 0.0  # risk aversion parameter
         # for this time, time to maturity and strike price are fixed, but we can probably find a way to vectorize this
-        T = 7 / 252  # time to maturity, in years
-        spot = 1.0  # spot price
+        T = 28 / 252  # time to maturity, in years
+        spot = 10.0  # spot price
 
         sigma_guess = 1.0  # initial guess of volatility
-        mu_guess = 2  # initial guess of drift
+        mu_guess = -2  # initial guess of drift
 
         def vol_curve_true(K):
-            return 0.2 - 0.5 * (sp.special.expit(spot / K - 1) - 0.5)
+            return 0.52 - 1.5 * (sp.special.expit(spot / K - 1) - 0.5)
 
         # synthesize test data
         N = 100
@@ -256,12 +252,10 @@ class TestTrainedModel(TestCase):
                 )
             ).float()
         )  # type: ignore
-        observed_prices = target_price.numpy() + np.random.randn(N) * 0.01
+        observed_prices = target_price.numpy() + np.random.randn(N) * 0.1
 
         # load trained models
-        model = RLOPModel(
-            is_call_option=is_call_option, checkpoint="trained_model/testr12/policy_1.pt", anchor_T=28 / 252
-        )
+        model = RLOPModel(is_call_option=is_call_option, checkpoint="trained_model/testr9/policy_1.pt", anchor_T=T)
         result = model.fit_predict(
             spot=spot,
             time_to_expiries=Ks * 0 + T,

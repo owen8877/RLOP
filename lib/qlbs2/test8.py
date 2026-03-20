@@ -1,4 +1,3 @@
-from operator import is_
 import os
 from dataclasses import replace
 from unittest import TestCase
@@ -191,7 +190,7 @@ class Training(TestCase):
 
         # load trained models
         path = self._path(risk_lambda)
-        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_2.pt")
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_1.pt")
         nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
 
         # invert prices
@@ -252,7 +251,7 @@ class Training(TestCase):
         plt.tight_layout()
         plt.show()
 
-    def test_draw_influence_of_mu(self):
+    def test_draw_influence_of_sigma(self):
         check_point = 1
 
         setup, risk_lambdas = self._parameters()
@@ -260,10 +259,146 @@ class Training(TestCase):
         is_call_option = True
         path = self._path(risk_lambda)
 
-        T, K, r, sigma, friction = 28 / 252, 1.0, 0.04, 0.5, 1e-3
-        initial_spots = np.linspace(0.8, 1.2, 50)
+        T, K, r, mu, friction = 56 / 252, 1, 0.04, 1, 1e-3
+        initial_spots = np.linspace(0.7, 1.1, 50)
 
-        fig, axs = plt.subplots(2, 1, figsize=(7, 9), constrained_layout=True, sharex=True)
+        fig, axs = plt.subplots(2, 1, figsize=(5, 3.5), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("mako", n_colors=4)
+
+        def build_state_info_tensor(sigma):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambdas[0]  # risk_lambda
+            state_info_tensor[:, 8] = friction  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        sigmas = [0.6, 0.8, 1.0]
+        for i, sigma in enumerate(sigmas):
+            tensor = build_state_info_tensor(sigmas[-i - 1])
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            axs[0].plot(initial_spots, nn_price, label=f"$\\sigma={sigmas[i]}$", color=palette[i + 1], linestyle="-")
+            axs[0].set_ylabel("Option Price")
+
+            axs[1].plot(
+                initial_spots, nn_latent_vol, label=f"$\\sigma={sigmas[i]}$", color=palette[i + 1], linestyle="-"
+            )
+            axs[1].set_ylabel("Implied Vol")
+
+        axs[0].legend(loc="best")
+        axs[1].set_xlabel("Initial Spot Price")
+        # grid on
+        axs[0].grid(True)
+        axs[1].grid(True)
+        # set gridto 50% transparency
+        axs[0].grid(alpha=0.5)
+        axs[1].grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_sigma.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        # plt.show()
+
+    def test_draw_influence_of_sigma_AI_conf(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = risk_lambdas[0]
+        is_call_option = True
+        path = self._path(risk_lambda)
+
+        T, K, r, mu, friction = 56 / 252, 1, 0.04, 1, 1e-3
+        initial_spots = np.linspace(0.7, 1.1, 50)
+
+        fig, axs = plt.subplots(2, 1, figsize=(5, 3.5), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("rocket", n_colors=4)
+
+        def build_state_info_tensor(sigma):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambdas[0]  # risk_lambda
+            state_info_tensor[:, 8] = friction  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        sigmas = [0.6, 0.8, 1.0]
+        for i, sigma in enumerate(sigmas):
+            tensor = build_state_info_tensor(sigmas[-i - 1])
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            axs[0].plot(
+                initial_spots * 10, nn_price * 10, label=f"$\\sigma={sigmas[i]}$", color=palette[i + 1], linestyle="-"
+            )
+            axs[0].set_ylabel("Option Price")
+
+            axs[1].plot(
+                initial_spots * 10, nn_latent_vol, label=f"$\\sigma={sigmas[i]}$", color=palette[i + 1], linestyle="-"
+            )
+            axs[1].set_ylabel("Implied Vol")
+
+        axs[0].legend(loc="best")
+        axs[1].set_xlabel("Initial Spot Price")
+        # grid on
+        axs[0].grid(True)
+        axs[1].grid(True)
+        # set gridto 50% transparency
+        axs[0].grid(alpha=0.5)
+        axs[1].grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_sigma_AI_conf.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        # plt.show()
+
+    def test_draw_influence_of_mu(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = 0.1  # risk_lambdas[0]
+        is_call_option = True
+        path = self._path(risk_lambda)
+
+        T, K, r, sigma, friction = 28 / 252, 1.0, 0.04, 0.6, 1e-2
+        initial_spots = np.linspace(0.7, 1.3, 50)
+
+        fig, axs = plt.subplots(2, 1, figsize=(7, 6), constrained_layout=True, sharex=True)
         palette = sns.color_palette("mako", n_colors=4)
 
         def build_state_info_tensor(mu):
@@ -284,28 +419,37 @@ class Training(TestCase):
         nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
         nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
 
-        for i, mu in enumerate([-2, 0, 2]):
-            tensor = build_state_info_tensor(mu)
+        mus = [-1, 0, 1]
+        for i, mu in enumerate(mus):
+            tensor = build_state_info_tensor(mus[i])
 
-            if i == 0:
-                bs_baseline = BSBaseline(is_call=is_call_option)
-                bs_price = bs_baseline.batch_estimate(tensor)
-                axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
 
             nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
             nn_price = -nn_price.cpu().numpy()
             nn_latent_vol = nn_latent_vol.cpu().numpy()
-            axs[0].plot(initial_spots, nn_price, label=f"mu={mu}", color=palette[i + 1], linestyle="-")
+            axs[0].plot(initial_spots, nn_price, label=f"$\\mu={mus[i]}$", color=palette[i + 1], linestyle="-")
             axs[0].set_ylabel("Option Price")
 
-            axs[1].plot(initial_spots, nn_latent_vol, label=f"mu={mu}", color=palette[i + 1], linestyle="-")
-            axs[1].set_ylabel("Latent Vol")
+            axs[1].plot(initial_spots, nn_latent_vol, label=f"$\\mu={mus[i]}$", color=palette[i + 1], linestyle="-")
+            axs[1].set_ylabel("Implied Vol")
 
         axs[0].legend(loc="best")
+        axs[1].set_xlabel("Initial Spot Price")
+        # grid on
+        axs[0].grid(True)
+        axs[1].grid(True)
+        # set gridto 50% transparency
+        axs[0].grid(alpha=0.5)
+        axs[1].grid(alpha=0.5)
 
         path = "plot/qlbs2/test8/influence_of_mu.png"
         ensure_dir(path, need_strip_end=True)
         fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
         plt.show()
 
     def test_draw_influence_of_friction(self):
@@ -316,10 +460,10 @@ class Training(TestCase):
         is_call_option = True
         path = self._path(risk_lambda)
 
-        T, K, r, sigma, mu = 28 / 252, 1.0, 0.04, 0.5, -2
-        initial_spots = np.linspace(0.8, 1.2, 50)
+        T, K, r, sigma, mu = 56 / 252, 1, 0.04, 0.8, 1.0
+        initial_spots = np.linspace(0.7, 1.1, 50)
 
-        fig, axs = plt.subplots(2, 1, figsize=(7, 9), constrained_layout=True, sharex=True)
+        fig, axs = plt.subplots(2, 1, figsize=(7, 6), constrained_layout=True, sharex=True)
         palette = sns.color_palette("mako", n_colors=4)
 
         def build_state_info_tensor(eps):
@@ -340,28 +484,41 @@ class Training(TestCase):
         nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
         nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
 
-        for i, eps in enumerate([1, 3, 5]):
-            tensor = build_state_info_tensor(eps)
+        epsilons = 1, 2, 3
+        for i, eps in enumerate(epsilons):
+            tensor = build_state_info_tensor(epsilons[-i - 1])
 
-            if i == 0:
-                bs_baseline = BSBaseline(is_call=is_call_option)
-                bs_price = bs_baseline.batch_estimate(tensor)
-                axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
 
             nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
             nn_price = -nn_price.cpu().numpy()
             nn_latent_vol = nn_latent_vol.cpu().numpy()
-            axs[0].plot(initial_spots, nn_price, label=f"eps={eps}", color=palette[i + 1], linestyle="-")
+            axs[0].plot(
+                initial_spots, nn_price, label=f"$\\epsilon={epsilons[i]}$", color=palette[i + 1], linestyle="-"
+            )
             axs[0].set_ylabel("Option Price")
 
-            axs[1].plot(initial_spots, nn_latent_vol, label=f"eps={eps}", color=palette[i + 1], linestyle="-")
-            axs[1].set_ylabel("Latent Vol")
+            axs[1].plot(
+                initial_spots, nn_latent_vol, label=f"$\\epsilon={epsilons[i]}$", color=palette[i + 1], linestyle="-"
+            )
+            axs[1].set_ylabel("Implied Vol")
 
         axs[0].legend(loc="best")
+        axs[1].set_xlabel("Initial Spot Price")
+        # grid on
+        axs[0].grid(True)
+        axs[1].grid(True)
+        # set gridto 50% transparency
+        axs[0].grid(alpha=0.5)
+        axs[1].grid(alpha=0.5)
 
         path = "plot/qlbs2/test8/influence_of_friction.png"
         ensure_dir(path, need_strip_end=True)
         fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
         plt.show()
 
     def test_draw_influence_of_lambda(self):
@@ -372,10 +529,10 @@ class Training(TestCase):
         is_call_option = True
 
         T, K, r, sigma, mu, eps = 28 / 252, 1.0, 0.04, 0.4, 0, 0.01
-        initial_spots = np.linspace(0.8, 1.2, 50)
-        lambdas = [0.01, 0.02, 0.05, 0.1, 0.2]
+        initial_spots = np.linspace(0.7, 1.1, 50)
+        lambdas = [0.01, 0.02, 0.05]
 
-        fig, axs = plt.subplots(2, 1, figsize=(7, 9), constrained_layout=True, sharex=True)
+        fig, axs = plt.subplots(2, 1, figsize=(7, 6), constrained_layout=True, sharex=True)
         palette = sns.color_palette("mako", n_colors=len(lambdas) + 1)
 
         def build_state_info_tensor(risk_lambda):
@@ -402,27 +559,433 @@ class Training(TestCase):
 
             tensor = build_state_info_tensor(risk_lambda)
 
-            if i == 0:
-                bs_baseline = BSBaseline(is_call=is_call_option)
-                bs_price = bs_baseline.batch_estimate(tensor)
-                axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
 
             nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
             nn_price = -nn_price.cpu().numpy()
             nn_latent_vol = nn_latent_vol.cpu().numpy()
-            axs[0].plot(
-                initial_spots, nn_price, label=f"risk lambda={risk_lambda}", color=palette[i + 1], linestyle="-"
-            )
+            axs[0].plot(initial_spots, nn_price, label=f"$\\lambda={risk_lambda}$", color=palette[i + 1], linestyle="-")
             axs[0].set_ylabel("Option Price")
 
             axs[1].plot(
-                initial_spots, nn_latent_vol, label=f"risk lambda={risk_lambda}", color=palette[i + 1], linestyle="-"
+                initial_spots, nn_latent_vol, label=f"$\\lambda={risk_lambda}$", color=palette[i + 1], linestyle="-"
             )
-            axs[1].set_ylabel("Latent Vol")
+            axs[1].set_ylabel("Implied Vol")
 
         axs[0].legend(loc="best")
+        axs[1].set_xlabel("Initial Spot Price")
+        # grid on
+        axs[0].grid(True)
+        axs[1].grid(True)
+        # set gridto 50% transparency
+        axs[0].grid(alpha=0.5)
+        axs[1].grid(alpha=0.5)
 
         path = "plot/qlbs2/test8/influence_of_lambda.png"
         ensure_dir(path, need_strip_end=True)
         fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        plt.show()
+
+    def test_draw_influence_of_mu_short(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = 0.1  # risk_lambdas[0]
+        is_call_option = True
+        path = self._path(risk_lambda)
+
+        T, K, r, sigma, friction = 28 / 252, 1.0, 0.04, 0.6, 1e-2
+        initial_spots = np.linspace(0.7, 1.3, 50)
+
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("mako", n_colors=4)
+
+        def build_state_info_tensor(mu):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambdas[0]  # risk_lambda
+            state_info_tensor[:, 8] = friction  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        mus = [-1, 0, 1]
+        for i, mu in enumerate(mus):
+            tensor = build_state_info_tensor(mus[i])
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            # axs[0].plot(initial_spots, nn_price, label=f"$\\mu={mus[i]}$", color=palette[i + 1], linestyle="-")
+            # axs[0].set_ylabel("Option Price")
+
+            ax.plot(initial_spots, nn_latent_vol, label=f"$\\mu={mus[i]}$", color=palette[i + 1], linestyle="-")
+            ax.set_ylabel("Implied Vol")
+
+        ax.legend(loc="best")
+        ax.set_xlabel("Initial Spot Price")
+        # grid on
+        ax.grid(True)
+        # set gridto 50% transparency
+        ax.grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_mu_short.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        plt.show()
+
+    def test_draw_influence_of_friction_short(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = risk_lambdas[0]
+        is_call_option = True
+        path = self._path(risk_lambda)
+
+        T, K, r, sigma, mu = 56 / 252, 1, 0.04, 0.8, 1.0
+        initial_spots = np.linspace(0.7, 1.1, 50)
+
+        fig, ax = plt.subplots(1, 1, figsize=(4.5, 2), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("mako", n_colors=4)
+
+        def build_state_info_tensor(eps):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambdas[0]  # risk_lambda
+            state_info_tensor[:, 8] = eps  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        epsilons = 1, 2, 3
+        for i, eps in enumerate(epsilons):
+            tensor = build_state_info_tensor(epsilons[-i - 1])
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            # axs[0].plot(
+            #     initial_spots, nn_price, label=f"$\\epsilon={epsilons[i]}$", color=palette[i + 1], linestyle="-"
+            # )
+            # axs[0].set_ylabel("Option Price")
+
+            ax.plot(
+                initial_spots, nn_latent_vol, label=f"$\\epsilon={epsilons[i]}$", color=palette[i + 1], linestyle="-"
+            )
+            ax.set_ylabel("Implied Vol")
+
+        ax.legend(loc="best")
+        ax.set_xlabel("Spot Price")
+        # grid on
+        ax.grid(True)
+        # set gridto 50% transparency
+        ax.grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_friction_short.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        plt.show()
+
+    def test_draw_influence_of_lambda_short(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = risk_lambdas[0]
+        is_call_option = True
+
+        T, K, r, sigma, mu, eps = 28 / 252, 1.0, 0.04, 0.4, -1, 0.01
+        initial_spots = np.linspace(0.7, 1.1, 50)
+        lambdas = [0.01, 0.02, 0.05]
+
+        fig, ax = plt.subplots(1, 1, figsize=(4.5, 2), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("mako", n_colors=len(lambdas) + 1)
+
+        def build_state_info_tensor(risk_lambda):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambda  # risk_lambda
+            state_info_tensor[:, 8] = eps  # friction
+            return state_info_tensor
+
+        for i, risk_lambda in enumerate(lambdas):
+            path = self._path(risk_lambda)
+            print(path)
+            nn_policy = GaussianPolicy_v6(
+                is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt"
+            )
+            nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+            tensor = build_state_info_tensor(risk_lambda)
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            # axs[0].plot(initial_spots, nn_price, label=f"$\\lambda={risk_lambda}$", color=palette[i + 1], linestyle="-")
+            # axs[0].set_ylabel("Option Price")
+
+            ax.plot(
+                initial_spots, nn_latent_vol, label=f"$\\lambda={risk_lambda}$", color=palette[i + 1], linestyle="-"
+            )
+            ax.set_ylabel("Implied Vol")
+
+        ax.legend(loc="best")
+        ax.set_xlabel("Spot Price")
+        # grid on
+        ax.grid(True)
+        ax.grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_lambda_short.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        plt.show()
+
+    def test_draw_influence_of_mu_short_AI_conf(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = 0.1  # risk_lambdas[0]
+        is_call_option = True
+        path = self._path(risk_lambda)
+
+        T, K, r, sigma, friction = 28 / 252, 1.0, 0.04, 0.6, 1e-2
+        initial_spots = np.linspace(0.7, 1.3, 50)
+
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("rocket", n_colors=4)
+
+        def build_state_info_tensor(mu):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambdas[0]  # risk_lambda
+            state_info_tensor[:, 8] = friction  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        mus = [-1, 0, 1]
+        for i, mu in enumerate(mus):
+            tensor = build_state_info_tensor(mus[i])
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            # axs[0].plot(initial_spots, nn_price, label=f"$\\mu={mus[i]}$", color=palette[i + 1], linestyle="-")
+            # axs[0].set_ylabel("Option Price")
+
+            ax.plot(initial_spots * 10, nn_latent_vol, label=f"$\\mu={mus[i]}$", color=palette[i + 1], linestyle="-")
+            ax.set_ylabel("Implied Vol")
+
+        ax.legend(loc="best")
+        ax.set_xlabel("Initial Spot Price")
+        # grid on
+        ax.grid(True)
+        # set gridto 50% transparency
+        ax.grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_mu_short_AI_conf.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        plt.show()
+
+    def test_draw_influence_of_friction_short_AI_conf(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = risk_lambdas[0]
+        is_call_option = True
+        path = self._path(risk_lambda)
+
+        T, K, r, sigma, mu = 56 / 252, 1, 0.04, 0.8, 1.0
+        initial_spots = np.linspace(0.7, 1.1, 50)
+
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("rocket", n_colors=4)
+
+        def build_state_info_tensor(eps):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambdas[0]  # risk_lambda
+            state_info_tensor[:, 8] = eps  # friction
+            return state_info_tensor
+
+        print(path)
+        nn_policy = GaussianPolicy_v6(is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt")
+        nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+        epsilons = 1, 2, 3
+        for i, eps in enumerate(epsilons):
+            tensor = build_state_info_tensor(epsilons[-i - 1])
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            # axs[0].plot(
+            #     initial_spots, nn_price, label=f"$\\epsilon={epsilons[i]}$", color=palette[i + 1], linestyle="-"
+            # )
+            # axs[0].set_ylabel("Option Price")
+
+            ax.plot(
+                initial_spots * 10,
+                nn_latent_vol,
+                label=f"$\\epsilon={epsilons[i]}$",
+                color=palette[i + 1],
+                linestyle="-",
+            )
+            ax.set_ylabel("Implied Vol")
+
+        ax.legend(loc="best")
+        ax.set_xlabel("Initial Spot Price")
+        # grid on
+        ax.grid(True)
+        # set gridto 50% transparency
+        ax.grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_friction_short_AI_conf.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
+        plt.show()
+
+    def test_draw_influence_of_lambda_short_AI_conf(self):
+        check_point = 1
+
+        setup, risk_lambdas = self._parameters()
+        risk_lambda = risk_lambdas[0]
+        is_call_option = True
+
+        T, K, r, sigma, mu, eps = 28 / 252, 1.0, 0.04, 0.4, 0, 0.01
+        initial_spots = np.linspace(0.7, 1.1, 50)
+        lambdas = [0.01, 0.02, 0.05]
+
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3), constrained_layout=True, sharex=True)
+        palette = sns.color_palette("rocket", n_colors=len(lambdas) + 1)
+
+        def build_state_info_tensor(risk_lambda):
+            initial_spot_tensor = torch.tensor(initial_spots)
+            state_info_tensor = torch.empty((len(initial_spot_tensor), 9))
+            state_info_tensor[:, 0] = initial_spot_tensor  # spot
+            state_info_tensor[:, 1] = 0  # passed_real_time
+            state_info_tensor[:, 2] = T  # remaining_real_time
+            state_info_tensor[:, 3] = K  # strike
+            state_info_tensor[:, 4] = r  # r
+            state_info_tensor[:, 5] = mu  # mu
+            state_info_tensor[:, 6] = sigma  # sigma
+            state_info_tensor[:, 7] = risk_lambda  # risk_lambda
+            state_info_tensor[:, 8] = eps  # friction
+            return state_info_tensor
+
+        for i, risk_lambda in enumerate(lambdas):
+            path = self._path(risk_lambda)
+            print(path)
+            nn_policy = GaussianPolicy_v6(
+                is_call_option=is_call_option, from_filename=f"{path}/policy_{check_point}.pt"
+            )
+            nn_baseline = NNBaseline_v6(nn_policy.theta_mu, nn_policy.optimizer)
+
+            tensor = build_state_info_tensor(risk_lambda)
+
+            # if i == 0:
+            #     bs_baseline = BSBaseline(is_call=is_call_option)
+            #     bs_price = bs_baseline.batch_estimate(tensor)
+            #     axs[0].plot(initial_spots, bs_price, label="BS Baseline", color=palette[0], linestyle="--")
+
+            nn_price, nn_latent_vol = nn_baseline.batch_estimate(tensor.cuda(), return_latent_vol=True)
+            nn_price = -nn_price.cpu().numpy()
+            nn_latent_vol = nn_latent_vol.cpu().numpy()
+            # axs[0].plot(initial_spots, nn_price, label=f"$\\lambda={risk_lambda}$", color=palette[i + 1], linestyle="-")
+            # axs[0].set_ylabel("Option Price")
+
+            ax.plot(
+                initial_spots * 10,
+                nn_latent_vol,
+                label=f"$\\lambda={risk_lambda}$",
+                color=palette[i + 1],
+                linestyle="-",
+            )
+            ax.set_ylabel("Implied Vol")
+
+        ax.legend(loc="best")
+        ax.set_xlabel("Initial Spot Price")
+        # grid on
+        ax.grid(True)
+        ax.grid(alpha=0.5)
+
+        path = "plot/qlbs2/test8/influence_of_lambda_short_AI_conf.png"
+        ensure_dir(path, need_strip_end=True)
+        fig.savefig(path)
+        fig.savefig(path.replace(".png", ".pdf"))
         plt.show()

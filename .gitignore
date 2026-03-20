@@ -1,3 +1,4 @@
+*.pkl
 dataset/
 paper-base/
 sync*

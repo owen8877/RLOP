@@ -183,16 +183,17 @@ class RLOPEnv:
 
     def reset(self) -> Tuple[State, Info]:
         self.mutate_parameters()
-        GBM, _ = geometricBM_parallel(
-            np.array(self.initial_spots),
-            self.parallel_n,
-            self.max_step,
-            1,
-            np.array(self.info.mus),
-            np.array(self.info.sigmas),
-            self.info._dt,
-        )
-        self._standard_price = GBM[:, :, 0]
+        if self._standard_price is None:
+            GBM, _ = geometricBM_parallel(
+                np.array(self.initial_spots),
+                self.parallel_n,
+                self.max_step,
+                1,
+                np.array(self.info.mus),
+                np.array(self.info.sigmas),
+                self.info._dt,
+            )
+            self._standard_price = GBM[:, :, 0]
         self.current_step = 0
 
         # values = self.price_estimator(self._describe(), self.info).cpu().numpy()
@@ -218,7 +219,8 @@ class RLOPEnv:
                     self.parallel_n * (expiry - tau + 1) : self.parallel_n * (expiry - tau + 2)
                 ]
             else:
-                _old_action = np.zeros_like(_action)
+                # _old_action = np.zeros_like(_action)
+                _old_action = _action
             _pv = self.portfolio_value[self.parallel_n * (expiry - tau) : self.parallel_n * (expiry - tau + 1)]
 
             # compute the cash position
@@ -228,8 +230,9 @@ class RLOPEnv:
 
             if expiry == tau:
                 payoff = lib.util.payoff_of_option(self.is_call_option, S_t, self.info.strike_prices)
-                reward = -np.abs(payoff - portfolio_value_t)
-                # reward = -(payoff - portfolio_value_t) ** 2
+                # reward = -np.abs(payoff - portfolio_value_t)
+                _delta_ = payoff - portfolio_value_t
+                reward = -((payoff - portfolio_value_t) ** 2)
             else:
                 pvs.append(portfolio_value_t)
 
@@ -239,7 +242,7 @@ class RLOPEnv:
         done = self.current_step >= self.max_step
         self.old_action = action
 
-        return self._describe(), reward, done
+        return self._describe(), reward, done, _delta_  # type: ignore
 
     def render(self, mode="human"):
         pass

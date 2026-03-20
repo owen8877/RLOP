@@ -30,6 +30,7 @@ def policy_gradient(
         states = []
         actions, _actions = [], []
         rewards = []
+        _deltas_ = []
 
         (state, info), done = env.reset(), False
         info: Info
@@ -38,7 +39,7 @@ def policy_gradient(
             action, _action = pi.action(state, info, return_pre_action=True)
             action = action.cpu().numpy()
             _action = _action.cpu().numpy()
-            state, reward, done = env.step(action)
+            state, reward, done, _delta_ = env.step(action)  # type: ignore
 
             if any(isnan(r) for r in reward):
                 raise ValueError("NaN encountered!")
@@ -47,6 +48,7 @@ def policy_gradient(
             actions.append(action)
             _actions.append(_action)
             rewards.append(reward)
+            _deltas_.append(_delta_)
 
         T = len(actions)
         G_tmp = 0
@@ -67,7 +69,8 @@ def policy_gradient(
             if not pi_frozen:
                 pi_loss = pi.update(delta * np.power(env.gamma, t), _actions[t], states[t], info)  # type: ignore
                 # print(f"{pi_loss=}")
-        price_loss = price_estimator.update(np.concatenate([-r for r in rewards], axis=0), states[0], info)
+        # price_loss = price_estimator.update(np.concatenate([-r for r in rewards], axis=0), states[0], info)
+        price_loss = price_estimator.update(np.concatenate(_deltas_, axis=0), states[0], info)
 
         discount = np.power(env.gamma, np.arange(len(rewards)))  # type: ignore
         t0_return = np.sum(np.array(rewards) * discount[:, None], axis=0)
@@ -85,6 +88,9 @@ def policy_gradient(
         writer.add_scalar("pi_loss", pi_loss if not pi_frozen else np.nan, e + 1)  # type: ignore
         writer.add_scalar("V_loss", V_loss if not V_frozen else np.nan, e + 1)  # type: ignore
         writer.add_scalar("price_loss", price_loss if not V_frozen else np.nan, e + 1)  # type: ignore
+
+        if (e + 1) % 10 == 0:
+            print(e, price_loss)
 
         # if (e + 1) % 100 == 0 and tensorboard_label:
         #     ax.cla()
