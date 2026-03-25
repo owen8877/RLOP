@@ -8,6 +8,7 @@ from unittest import TestCase
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -19,6 +20,45 @@ try:
     _HAVE_SCIPY = True
 except Exception:
     _HAVE_SCIPY = False
+
+
+# ============================================================
+# Repo bootstrap / RL imports
+# ============================================================
+
+def _ensure_repo_root_on_syspath() -> Path:
+    """
+    Make `lib/...` importable whether this script is launched from the repo
+    root or from a subdirectory such as `playground/`.
+    """
+    candidates: List[Path] = []
+    here = Path(__file__).resolve().parent
+    candidates.extend([here, *here.parents])
+    cwd = Path.cwd().resolve()
+    candidates.extend([cwd, *cwd.parents])
+
+    seen = set()
+    for cand in candidates:
+        if cand in seen:
+            continue
+        seen.add(cand)
+        if (cand / "lib" / "qlbs2").exists() and (cand / "lib" / "rlop2").exists():
+            cand_str = str(cand)
+            if cand_str not in sys.path:
+                sys.path.insert(0, cand_str)
+            return cand
+
+    raise ModuleNotFoundError(
+        "Could not locate repo root containing lib/qlbs2 and lib/rlop2. "
+        "Run from the RLOP repo root, or place this script inside that repo."
+    )
+
+
+def _load_rl_model_classes():
+    _ensure_repo_root_on_syspath()
+    from lib.qlbs2.test_trained_model import QLBSModel as _QLBSModel
+    from lib.rlop2.test_trained_model import RLOPModel as _RLOPModel
+    return _QLBSModel, _RLOPModel
 
 
 # ============================================================
@@ -924,12 +964,12 @@ def run_dynamic_hedging_spy_like(df_all: pd.DataFrame, cfg: HedgingRunConfig) ->
     # Lazy imports for RL
     QLBSModel = None
     RLOPModel = None
-    if cfg.run_qlbs:
-        from lib.qlbs2.test_trained_model import QLBSModel as _QLBSModel
-        QLBSModel = _QLBSModel
-    if cfg.run_rlop:
-        from lib.rlop2.test_trained_model import RLOPModel as _RLOPModel
-        RLOPModel = _RLOPModel
+    if cfg.run_qlbs or cfg.run_rlop:
+        _QLBSModel, _RLOPModel = _load_rl_model_classes()
+        if cfg.run_qlbs:
+            QLBSModel = _QLBSModel
+        if cfg.run_rlop:
+            RLOPModel = _RLOPModel
 
     bucket_centers = list(map(int, cfg.buckets))
     targets = list(map(float, cfg.moneyness_targets))
@@ -1834,12 +1874,12 @@ def benchmark_efficiency_spy_like(
 
     QLBSModel = None
     RLOPModel = None
-    if cfg.run_qlbs:
-        from lib.qlbs2.test_trained_model import QLBSModel as _QLBSModel
-        QLBSModel = _QLBSModel
-    if cfg.run_rlop:
-        from lib.rlop2.test_trained_model import RLOPModel as _RLOPModel
-        RLOPModel = _RLOPModel
+    if cfg.run_qlbs or cfg.run_rlop:
+        _QLBSModel, _RLOPModel = _load_rl_model_classes()
+        if cfg.run_qlbs:
+            QLBSModel = _QLBSModel
+        if cfg.run_rlop:
+            RLOPModel = _RLOPModel
 
     bucket_centers = list(map(int, cfg.buckets))
     targets = list(map(float, cfg.moneyness_targets))
