@@ -1,0 +1,159 @@
+% \documentclass[mlic]{acmart}
+\documentclass[sigconf,nonacm]{acmart}
+% \geometry{
+% letterpaper,                % 纸张大小：Letter
+% top=3.1cm,                  % 上边距
+% bottom=5.01cm,              % 下边距
+% left=2.54cm,                % 左边距
+% right=3.6cm,                % 右边距
+% nomarginpar,                % 禁用侧边栏注释
+% heightrounded               % 自动微调文本高度以防止行底溢出}%
+% }
+
+\setlength{\textfloatsep}{4pt}
+\setlength{\intextsep}{4pt}
+\setlength{\floatsep}{4pt}
+\setlength{\dbltextfloatsep}{4pt}
+\captionsetup{skip=2pt}
+
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{6pt}{2pt}
+\titlespacing*{\subsection}{0pt}{4pt}{2pt}
+\titlespacing*{\subsubsection}{0pt}{3pt}{1pt}
+
+\setlength{\abovedisplayskip}{2pt}
+\setlength{\belowdisplayskip}{2pt}
+\setlength{\abovedisplayshortskip}{1pt}
+\setlength{\belowdisplayshortskip}{1pt}
+
+%% Rights management information (Placeholder from sample)
+\setcopyright{none}
+% \copyrightyear{}
+% \acmYear{2026}
+% \acmDOI{XXXXXXX.XXXXXXX}
+
+%% Conference information (Placeholder)
+% \acmConference[MLIC 2026]{International Conference on Machine Learning and Intelligent Computing}{April 24--26, 2026}{Zhengzhou, China}
+% \acmISBN{979-8-4007-2465-7}
+
+%% Preamble: Additional packages from your original file
+\usepackage{cleveref}
+\usepackage{subcaption}
+% \usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{multirow}
+
+\usepackage{amsthm}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{tikz}
+\usepackage{booktabs}
+\usetikzlibrary{decorations.pathreplacing,arrows.meta,calc}
+
+\theoremstyle{definition}
+\newtheorem{defn}{Definition}[]
+\theoremstyle{plain}
+\newtheorem{prop}{Proposition}[]
+
+\begin{document}
+\input{math_shorthand}
+
+%% Title Information
+\title{Autonomous AI Agents for Option Hedging: Enhancing Financial Stability through Shortfall Aware Reinforcement Learning
+}
+
+
+%% Author Information
+
+\author{Minxuan Hu}
+\orcid{0009-0007-1733-0099}
+\affiliation{%
+  \institution{Cornell University}
+  \city{Ithaca}
+  \state{NY}
+  \country{USA}
+}
+\email{mh2229@cornell.edu}
+
+\author{Ziheng Chen}
+\orcid{0000-0001-9671-3977}
+\affiliation{%
+  \institution{University of Texas at Austin}
+  \city{Austin}
+  \state{TX}
+  \country{USA}
+}
+\email{stokes615@utexas.edu}
+
+\author{Jiayu Yi}
+\authornote{Corresponding Author}
+\orcid{0000-0003-1619-1035}
+\affiliation{%
+  \institution{Nanyang Technological University}
+  \city{Singapore}
+  \country{Singapore}
+}
+\email{sophiayi97@gmail.com}
+
+\author{Wenxi Sun}
+\orcid{0009-0007-2585-6015}
+\affiliation{%
+  \institution{Johns Hopkins University}
+  \city{Baltimore}
+  \state{MD}
+  \country{USA}
+}
+\email{wsun41@alumni.jh.edu}
+
+%% Short Authors for Header
+\renewcommand{\shortauthors}{Hu et al.}
+
+%% Abstract
+\begin{abstract}
+
+\input{sections/abstract}
+
+\end{abstract}
+
+\begin{CCSXML}
+<ccs2012>
+   <concept>
+       <concept_id>10010405.10010455.10010460</concept_id>
+       <concept_desc>Applied computing~Economics</concept_desc>
+       <concept_significance>500</concept_significance>
+       </concept>
+   <concept>
+       <concept_id>10010147.10010257.10010293.10010294</concept_id>
+       <concept_desc>Computing methodologies~Neural networks</concept_desc>
+       <concept_significance>300</concept_significance>
+       </concept>
+ </ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Applied computing~Economics}
+\ccsdesc[300]{Computing methodologies~Neural networks}
+% Keywords
+\keywords{Option pricing, Reinforcement learning, Dynamic hedging, Shortfall risk, Deep Neural Network}
+
+\maketitle
+
+\section{Introduction}
+\input{sections/literature}
+\input{sections/intro-new}
+
+\input{sections/method-general}
+\input{sections/method-qlbs}
+\input{sections/method-rlop}
+\input{sections/method-numerical}
+\input{sections/experiment}
+\input{sections/discussion}
+
+%% Bibliography
+\bibliographystyle{unsrt}
+\bibliography{ref_new}
+
+\onecolumn
+% \appendix
+% \input{sections/appendix}
+
+\end{document}

@@ -1,0 +1,320 @@
+\section{Empirical Results on Market Data}
+\label{sec:empirical_market}
+
+We evaluate models by their realized-path $\Delta$-hedging performance on listed option markets under discrete rebalancing and proportional transaction costs.
+The question is operational: \emph{given a model’s deltas, what distribution of after-cost hedging outcomes is delivered along the subsequently realized underlying path?}
+Accordingly, we emphasize distributional evidence for the net hedging outcome and downside risk, complemented by a compact risk--cost map that separates replication quality from execution costs.
+Same-day implied-volatility fit is reported only as a diagnostic for pricing misspecification, not as the primary criterion for hedging quality.
+
+We study European-style call contracts on SPY (S\&P 500 ETF) and XOP (energy-sector ETF) across two non-overlapping quarters chosen to represent distinct regimes:
+2020Q1 (COVID dislocation) and 2025Q2 (calmer conditions).
+We compare two RL-based methods (QLBS and RLOP) against three parametric benchmarks:
+Black--Scholes/Black--76 \cite{black1973pricing} (BS), Merton’s jump-diffusion \cite{merton1976discontinuous} (JD), and Heston stochastic volatility \cite{heston1993closed} (SV).
+
+
+\subsection{Market Data and Experimental Slices}
+\label{subsec:market_slices}
+
+\paragraph{Daily option slices and contract universe.}
+We use daily option snapshots for SPY and XOP and construct European-equivalent market call prices $C^{\mathrm{mkt}}(K,\tau)$ using the dataset-provided forwards and discount factors.
+We retain contracts with $3$ to $70$ calendar days to maturity.
+Each trading day defines one cross-sectional slice used for calibration/fitting, and all reported statistics aggregate over days with equal-day weighting so that
+each date contributes one observation.
+
+\paragraph{Maturity buckets and moneyness targets.}
+To standardize comparisons across dates, we group maturities into three buckets centered at $\tau\in\{14,28,56\}$ days.
+Within each bucket, moneyness is defined as $K/F$, where $F$ is the forward corresponding to maturity $\tau$.
+In the main text we focus on the $\tau=28$d bucket and report two benchmark targets:
+ATM ($K/F=1$) and mildly out-of-the-money ($K/F=1.03$).
+The $\tau=14$ and $\tau=56$ buckets are reported in the appendix to document horizon robustness without overloading the main narrative.
+
+\paragraph{Day-by-day calibration and delta generation.}
+On each trading day and within each maturity bucket, the parametric models (BS, JD, SV) are calibrated to the same-day option cross-section by minimizing squared
+pricing errors.
+QLBS and RLOP are fit on the same day--bucket slice following the procedures in earlier sections.
+The fitted models then output model-implied deltas, which are evaluated under a common realized-path hedging protocol with transaction costs (Sec.~\ref{subsubsec:realized_path_hedging}).
+
+
+\subsection{Dynamic Hedging Performance}
+\label{subsec:dynamic_hedging}
+
+\subsubsection{Realized-Path Hedging under Transaction Costs}
+\label{subsubsec:realized_path_hedging}
+
+Dynamic evaluation is performed via discrete-time $\Delta$-hedging of a short call over the remaining life of the contract.
+On each trade date $t_0$, a model is fit using the same-day option cross-section and supplies a delta rule
+$\Delta_t=\Delta^{(m)}(S_t,t; \theta_{t_0})$ for $t\in[t_0,T]$, which is then applied along the subsequently realized underlying path.
+Rebalancing occurs once per trading day.\footnote{All models are evaluated under the same rebalancing schedule and transaction-cost specification.}
+
+\paragraph{Self-financing portfolio with proportional costs.}
+Let $S_t$ denote the underlying price, and consider a self-financing hedging portfolio holding $\Delta_t$ shares and a cash account.
+Trades incur proportional costs: when the position changes by $\Delta_t-\Delta_{t^-}$ at price $S_t$, the cost is
+$c\,|\Delta_t-\Delta_{t^-}|\,S_t$, where $c>0$ is the half-spread (or proportional fee) rate.
+The portfolio is initialized with the option premium and rebalanced until maturity $T$.
+Let $(S_T-K)^+$ denote the terminal payoff of the short call.
+
+\paragraph{Net outcome, execution cost, and replication component.}
+Let $V_T$ denote the terminal portfolio value after all transaction costs have been debited through the hedging horizon.
+The realized after-cost hedging outcome is
+\begin{equation}
+\Pi_T^{\mathrm{net}} \;:=\; V_T - (S_T-K)^+ .
+\label{eq:pi_net_def}
+\end{equation}
+We also track the cumulative transaction cost
+\begin{equation}
+C_T \;:=\; \sum_{t\in\mathcal{T}} c\,|\Delta_t-\Delta_{t^-}|\,S_t \;\ge\; 0 ,
+\label{eq:ct_def}
+\end{equation}
+where $\mathcal{T}$ includes the initial hedge trade at $t_0$ and all subsequent daily rebalancing times.
+At maturity, the terminal stock position is marked to market in $V_T$ without an explicit closing trade, so no terminal liquidation cost is charged.
+To separate replication quality from execution intensity, we define the before-cost replication component
+\begin{equation}
+\varepsilon_T \;:=\; \Pi_T^{\mathrm{net}} + C_T ,
+\label{eq:eps_def}
+\end{equation}
+so that $\Pi_T^{\mathrm{net}}=\varepsilon_T-C_T$ holds by construction.
+This decomposition is useful because models may differ both in their replication component (pre-cost) and in the trading they induce (cost).
+
+\paragraph{Outcome summaries.}
+We report three complementary summaries, each answering a distinct desk-relevant question.
+
+\begin{enumerate}
+\item \textit{Distribution of after-cost outcomes (CDF of $\Pi_T^{\mathrm{net}}$).}
+We visualize the full distribution of $\Pi_T^{\mathrm{net}}$ using overlaid empirical cumulative distribution functions (ECDFs).
+A right-shifted CDF corresponds to better outcomes (larger after-cost P\&L), and crossings reveal regime- or state-dependent trade-offs that are not captured by a single scalar metric.
+
+\item \textit{Downside severity and loss frequency (Expected Shortfall (ES) and shortfall probability).}
+We quantify tail losses using the shortfall
+\begin{equation}
+\mathrm{SF}_T \;:=\; \max\!\bigl(0,\,-\Pi_T^{\mathrm{net}}\bigr),
+\label{eq:sf_def}
+\end{equation}
+and report Expected Shortfall at tail levels $\alpha\in\{5\%,10\%\}$,
+\begin{equation}
+\mathrm{ES}_{\alpha} \;:=\; \mathbb{E}\!\left[\mathrm{SF}_T \,\middle|\, \mathrm{SF}_T \ge \mathrm{VaR}_{\alpha}(\mathrm{SF}_T)\right],
+\label{eq:es_def}
+\end{equation}
+where $\mathrm{VaR}_{\alpha}(\mathrm{SF}_T)$ is the $(1-\alpha)$ quantile of $\mathrm{SF}_T$.
+Lower values indicate smaller expected shortfalls conditional on being in the worst $\alpha$ tail.
+We also report the shortfall probability $\mathbb{P}(\Pi_T^{\mathrm{net}}<0)$ to separate loss frequency from loss severity.
+
+\item \textit{Implementation efficiency (replication dispersion versus cost).}
+To summarize the execution--accuracy trade-off, we plot average transaction cost against a dispersion measure of the replication component.
+Specifically, we report
+\begin{equation}
+\mathrm{RMSE}(\varepsilon_T) \;:=\; \sqrt{\mathbb{E}\!\left[\varepsilon_T^2\right]},
+\label{eq:rmse_eps_def}
+\end{equation}
+and place each model as a point in the resulting risk--cost plane $(\mathbb{E}[C_T],\,\mathrm{RMSE}(\varepsilon_T))$.
+This view is complementary to tail-risk metrics: it isolates whether performance differences are driven primarily by changes in the replication component (pre-cost), changes in trading intensity, or both.
+Uncertainty bands are reported as confidence intervals for the mean of $\varepsilon_T^2$, mapped to RMSE by taking square roots of the bounds.
+\end{enumerate}
+
+\paragraph{Aggregation across days.}
+All statistics are computed with equal-day weighting.
+On each trading day and within each maturity bucket, we select the listed contract whose moneyness $K/F$ is closest to each target (ATM and $K/F=1.03$) and run the realized-path hedging backtest for that contract.
+We then aggregate the resulting per-day outcomes across days so that each date contributes one observation.
+
+
+\subsubsection{Distributional Outcomes}
+\label{subsubsec:dist_outcomes}
+
+Fig.~\ref{fig:net_cdf_tau28} overlays empirical CDFs of the after-cost net outcome $\Pi_T^{\mathrm{net}}$ (Eq.~\eqref{eq:pi_net_def}) for the $\tau=28$d bucket,
+comparing the two moneyness targets ATM ($K/F=1$) and mildly out-of-the-money ($K/F=1.03$) across assets (SPY, XOP) and regimes (2020Q1 versus 2025Q2). Right-shifted curves indicate improved after-cost outcomes, and the vertical reference at $0$ marks the break-even point.
+
+Two qualitative features stand out.
+First, the 2020Q1 stress regime exhibits substantially wider dispersion and heavier left tails than 2025Q2, with the clearest separation across models in the
+sector ETF (XOP).
+Second, curves frequently cross within a slice, indicating that relative performance depends on which part of the outcome distribution is emphasized (middle
+versus tail) rather than admitting a single uniform ranking.
+Notably, in stress/sector slices where adverse outcomes are most dispersed, the RL policies often display a more favorable left-tail profile after costs; we make this explicit using tail shortfall summaries and an execution-efficiency decomposition reported next.
+
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\textwidth]{empirical/net_cdf_grid_tau28.png}
+  \caption{Empirical CDFs of after-cost net hedging outcome $\Pi_T^{\mathrm{net}}$ for $\tau=28$d.
+  Columns correspond to SPY 2020Q1, SPY 2025Q2, XOP 2020Q1, and XOP 2025Q2.
+  Top row: ATM ($K/F=1$). Bottom row: mildly out-of-the-money ($K/F=1.03$).
+  Right-shifted curves indicate improved after-cost outcomes; crossings motivate the explicit tail-risk summaries reported in
+  Sec.~\ref{subsubsec:tail_es}.}
+  \label{fig:net_cdf_tau28}
+\end{figure*}
+
+
+\subsubsection{Tail Shortfall and Expected Shortfall}
+\label{subsubsec:tail_es}
+
+The CDFs in Fig.~\ref{fig:net_cdf_tau28} motivate tail summaries that separate loss frequency from tail-loss severity.
+Table~\ref{tab:scorecard_28d_tail} reports, for each $\tau=28$d slice, the model with lowest $\mathrm{ES}_{5\%}$, lowest $\mathrm{ES}_{10\%}$, and lowest shortfall probability $\mathbb{P}(\Pi_T^{\mathrm{net}}<0)$. Two messages stand out.
+
+First, RLOP is the most consistent winner on loss frequency: across the eight slices, it achieves the lowest shortfall probability in six cases (including all four XOP slices). This indicates fewer after-cost losing realizations under the same daily rebalancing schedule, which is operationally meaningful when hedges are deployed repeatedly.
+
+Second, tail-loss severity is more regime-dependent, but RL is strongest in the sector stress slice. Across the eight slices, an RL method (QLBS or RLOP) attains the lowest $\mathrm{ES}_{5\%}$ in five cases, with the clearest improvements concentrated in the stress/sector regime (XOP 2020Q1), where RLOP is best on both $\mathrm{ES}_{5\%}$ and $\mathrm{ES}_{10\%}$ for both moneyness targets. Outside stress/sector conditions, rankings are mixed. Parametric baselines can lead Expected Shortfall even when an RL policy reduces loss frequency, reinforcing that frequency and severity need not align.
+
+We therefore interpret the tail scorecard together with the risk--cost maps that follow, which separate replication dispersion from execution cost.
+
+% --- Scorecard (tau=28) ---
+\begin{table*}[t]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.15}
+
+\begin{tabular}{l c c c c}
+\hline
+Setting ($\tau=28$) & Best $\mathrm{ES}_{5\%}$ & Best $\mathrm{ES}_{10\%}$ & Lowest shortfall prob. & $n_{\text{days}}$ \\
+\hline
+SPY 2020Q1 ATM           & BS (8.787)    & BS (8.395)    & RLOP (0.91) & 23 \\
+SPY 2020Q1 $K/F{=}1.03$  & QLBS (7.538)  & QLBS (7.271)  & SV (0.96)   & 23 \\
+SPY 2025Q2 ATM           & BS (19.214)   & JD (13.995)   & JD (0.53)   & 62 \\
+SPY 2025Q2 $K/F{=}1.03$  & JD (15.114)   & JD (12.207)   & RLOP (0.55) & 62 \\
+XOP 2020Q1 ATM           & RLOP (0.694)  & RLOP (0.674)  & RLOP (0.96) & 23 \\
+XOP 2020Q1 $K/F{=}1.03$  & RLOP (0.502)  & RLOP (0.489)  & RLOP (0.78) & 23 \\
+XOP 2025Q2 ATM           & QLBS (4.610)  & BS (2.983)    & RLOP (0.39) & 57 \\
+XOP 2025Q2 $K/F{=}1.03$  & QLBS (3.037)  & QLBS (2.075)  & RLOP (0.33) & 57 \\
+\hline
+\end{tabular}
+
+\caption{Tail scorecard for $\tau=28$d bucket: lowest $\mathrm{ES}_{5\%}$, $\mathrm{ES}_{10\%}$, and shortfall probability $\mathbb{P}(\Pi_T^{\mathrm{net}}<0)$ under equal-day weighting; $n_{\text{days}}$ is the number of trading days.}
+\label{tab:scorecard_28d_tail}
+\end{table*}
+
+
+\subsubsection{Risk--Cost Map: Replication Risk versus Execution Cost}
+\label{subsubsec:risk_cost_map}
+
+The CDF and tail summaries focus on after-cost outcomes, but it is also useful to separate execution intensity from replication dispersion.
+Fig.~\ref{fig:risk_cost_tau28} summarizes this decomposition for the $\tau=28$d bucket by placing each model at
+$\bigl(\mathbb{E}[C_T],\,\mathrm{RMSE}(\varepsilon_T)\bigr)$, where $C_T$ is cumulative transaction cost (Eq.~\eqref{eq:ct_def}),
+$\varepsilon_T=\Pi_T^{\mathrm{net}}+C_T$ is the before-cost replication component (Eq.~\eqref{eq:eps_def}),
+and $\mathrm{RMSE}(\varepsilon_T)$ is defined in Eq.~\eqref{eq:rmse_eps_def}.
+Expectations are equal-day means over trading days for the target contract (closest listed $K/F$ each day).
+Lower-left is better (cheaper hedging with smaller replication dispersion).
+
+Two desk-relevant patterns are visible.
+First, the lowest average trading cost is consistently achieved by an RL policy (QLBS or RLOP) across these slices, indicating systematically lower turnover under the same daily rebalancing schedule.
+Second, the risk--cost trade-off depends on the slice: in several settings the RL points lie on or near the lower envelope (delivering low dispersion at low cost), while in others a parametric benchmark can attain slightly lower dispersion only by paying materially higher cost.
+This view complements Sec.~\ref{subsubsec:tail_es} by clarifying whether differences in tail outcomes are driven primarily by reduced execution, improved replication, or both.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{empirical/risk_cost_map_tau28.png}
+\caption{Risk--cost maps for the $\tau=28$d bucket.
+Each point plots average transaction cost $\mathbb{E}[C_T]$ versus replication dispersion $\mathrm{RMSE}(\varepsilon_T)$, with $\varepsilon_T=\Pi_T^{\mathrm{net}}+C_T$.
+Error bars are 95\% confidence intervals; lower-left indicates cheaper hedging with lower replication dispersion.}
+\label{fig:risk_cost_tau28}
+\end{figure*}
+
+
+\subsection{Static Pricing Accuracy: Implied-Volatility Fit}
+\label{subsec:ivrmse}
+
+As a diagnostic for same-day cross-sectional pricing accuracy, we report the equal-day implied-volatility RMSE (IVRMSE) for the $\tau=28$d maturity bucket.
+On each trading day $d$, we invert Black--76 \cite{black1973pricing} to compute implied volatilities from both market prices and each model’s fitted prices, and define the per-day statistic
+\begin{equation}
+\mathrm{IVRMSE}^{(m)}_{d}
+\;:=\;
+10^{2}\times
+\sqrt{\frac{1}{N_d}\sum_{i=1}^{N_d}\Bigl(\sigma^{(m)}_{d,i}-\sigma^{\mathrm{mkt}}_{d,i}\Bigr)^2},
+\label{eq:ivrmse_def}
+\end{equation}
+where the sum runs over the $N_d$ contracts in the relevant day--bucket slice and $m\in\{\mathrm{BS},\mathrm{JD},\mathrm{SV},\mathrm{QLBS},\mathrm{RLOP}\}$.
+We then aggregate across days using equal-day weighting, i.e., for each model $m$ we report
+$\frac{1}{|\mathcal{D}|}\sum_{d\in\mathcal{D}}\mathrm{IVRMSE}^{(m)}_{d}$ so that each date contributes one observation, independent of the number of listed strikes.
+Lower values indicate closer agreement with the observed implied-volatility surface on the calibration day.
+
+Table~\ref{tab:ivrmse_28d_by_moneyness} reports IVRMSE for the full $\tau=28$d slice and for broad moneyness subsets.
+We emphasize that IVRMSE is reported to contextualize pricing misspecification and model mismatch, rather than to rank hedging strategies.
+
+
+% ---- IVRMSE 28d by moneyness groups ----
+\begin{table*}[t]
+\centering
+\small
+\begin{tabular}{cc c c c c c c}
+\toprule
+Moneyness, $\tau$ & Period & Asset & BS & JD & SV & QLBS & RLOP \\
+\midrule
+\multirow{4}{*}{Whole sample, 28d}
+& \multirow{2}{*}{2020Q1} & SPY & 7.65 & \textbf{1.76} & 4.21 & 10.27 & 8.25 \\
+&                        & XOP & 12.02 & 9.16 & \textbf{8.83} & 10.99 & 18.81 \\
+\cmidrule(lr){2-8}
+& \multirow{2}{*}{2025Q2} & SPY & 12.80 & 9.49 & 7.40 & 9.25 & \textbf{7.34} \\
+&                        & XOP & 10.61 & \textbf{6.48} & 7.33 & 11.12 & 16.36 \\
+\midrule
+\multirow{4}{*}{Moneyness $<1$, 28d}
+& \multirow{2}{*}{2020Q1} & SPY & 8.84 & \textbf{1.61} & 4.13 & 13.39 & 9.53 \\
+&                        & XOP & 14.09 & \textbf{9.80} & 10.22 & 12.48 & 19.52 \\
+\cmidrule(lr){2-8}
+& \multirow{2}{*}{2025Q2} & SPY & 16.94 & 11.42 & 7.55 & 10.76 & \textbf{7.55} \\
+&                        & XOP & 12.37 & \textbf{7.51} & 8.61 & 13.46 & 13.73 \\
+\midrule
+\multirow{4}{*}{Moneyness $>1$, 28d}
+& \multirow{2}{*}{2020Q1} & SPY & 5.46 & \textbf{1.75} & 3.21 & 5.46 & 6.37 \\
+&                        & XOP & 7.64 & 5.35 & \textbf{4.58} & 6.60 & 16.47 \\
+\cmidrule(lr){2-8}
+& \multirow{2}{*}{2025Q2} & SPY & \textbf{3.97} & 5.36 & 5.93 & 6.52 & 6.36 \\
+&                        & XOP & 7.94 & \textbf{4.33} & 4.95 & 6.60 & 18.23 \\
+\midrule
+\multirow{4}{*}{Moneyness $>1.03$, 28d}
+& \multirow{2}{*}{2020Q1} & SPY & 6.19 & \textbf{2.02} & 3.70 & 4.17 & 5.59 \\
+&                        & XOP & 8.14 & 5.64 & \textbf{4.92} & 6.99 & 16.67 \\
+\cmidrule(lr){2-8}
+& \multirow{2}{*}{2025Q2} & SPY & \textbf{4.04} & 5.94 & 6.58 & 6.76 & 6.12 \\
+&                        & XOP & 8.54 & \textbf{4.61} & 5.29 & 6.69 & 19.14 \\
+\bottomrule
+\end{tabular}
+\caption{Equal-day IVRMSE (Eq.~\eqref{eq:ivrmse_def}) for the $\tau=28$d maturity bucket across moneyness groups.
+Lower is better; bold marks the best value within each asset, period, and moneyness row.}
+\label{tab:ivrmse_28d_by_moneyness}
+\end{table*}
+
+Two qualitative patterns are evident.
+First, the parametric benchmarks typically dominate static surface fit across assets and regimes: a parametric model is best in the majority of rows, with JD
+often leading and SV frequently competitive.
+This is most pronounced in the 2020Q1 stress regime, where jumps and stochastic volatility materially improve cross-sectional fit relative to the constant-volatility
+BS benchmark.
+
+Second, the RL policies are not designed to minimize same-day surface error and therefore do not consistently lead IVRMSE.
+This is expected: their objective is to produce deltas that perform well under realized-path hedging with transaction costs, where trading feedback and
+path dependence matter.
+Notably, in calmer index conditions (SPY 2025Q2), RLOP becomes competitive on IVRMSE in parts of the slice, indicating that a friction-aware hedging policy can
+occasionally align with the static surface despite not being trained as an implied-volatility interpolator.
+
+Overall, Table~\ref{tab:ivrmse_28d_by_moneyness} supports the interpretation used throughout this section:
+strong same-day IV fit is attainable with standard parametric models, but it is not a reliable proxy for realized-path hedging performance under transaction costs.
+We therefore treat IVRMSE as a supporting diagnostic and place primary emphasis on distributional outcomes, tail risk, and implementation efficiency in
+Sec.~\ref{subsec:dynamic_hedging}.
+
+
+\subsection{Robustness and Implications}
+\label{subsec:robustness_implications}
+
+The main text focuses on the $\tau=28$d bucket to keep the empirical narrative compact.
+Figures \ref{fig:net_cdf_tau14}--\ref{fig:risk_cost_tau56} in the appendix replicate the net-CDF overlays and the risk--cost maps for $\tau\in\{14,56\}$, and Tables \ref{tab:scorecard_14d}--\ref{tab:ivrmse_56d_whole} in the appendix report the corresponding
+tail-risk scorecards and IVRMSE breakdowns.
+Across horizons, the qualitative conclusions are stable.
+Static IV fit continues to favor the parametric benchmarks, while realized-path hedging under transaction costs reveals differences in execution spend,
+after-cost outcome distributions, and downside risk.
+
+These results also clarify why static fit and realized hedging performance need not align. IVRMSE is a same-day cross-sectional diagnostic evaluated on the calibration surface, whereas hedging outcomes are determined by the subsequently realized
+underlying path under discrete rebalancing, together with the interaction between turnover and proportional costs.
+As a result, a model can interpolate the surface well and still generate deltas that are suboptimal once execution frictions and realized dynamics are
+accounted for.
+
+Taken together, the evidence supports a hedging-facing evaluation criterion under costs.
+The net-CDF overlays localize where after-cost gains occur and where rankings reverse due to crossings.
+Expected Shortfall summarizes extreme-loss severity, while the risk--cost maps separate replication dispersion (via $\varepsilon_T$) from execution intensity
+(via $C_T$).
+Across slices, the RL policies deliver systematic reductions in trading cost, and the tail-risk benefits are most visible in stress and sector conditions.
+The two RL methods also retain economic interpretability: QLBS is more replication-oriented, whereas RLOP more consistently prioritizes implementability and
+downside control under frictions.
+
+From a model-risk perspective, the results indicate that transaction-cost-aware policies can improve realized hedging outcomes even when they do not dominate
+static surface fit.
+This distinction is operationally relevant for trading and risk functions that hedge through regime shifts and misspecification, and it motivates the
+horizon-robustness results reported in the appendix.
+In applied terms, reducing turnover while controlling tail losses constitutes a market-facing benefit, supporting the view that learning-based policies can
+complement classical parametric models by optimizing the deployment objective directly.
+

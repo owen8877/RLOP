@@ -1,0 +1,38 @@
+
+% \subsection{RLOP: A Forward Replication Learning Framework}
+
+\subsection{RLOP: Forward Replication Learning}
+% We propose Replication Learning of Option Pricing (RLOP) that takes a forward view.
+% The agent trades a self-financing portfolio and is rewarded based on how closely its terminal value matches the option payoff.
+% Compared with Deep Hedging (\cite{buehler2019deep}), which can embed a speculative component (\cite{franccois2025difference}), RLOP’s shortfall-probability objective encourages capital preservation and downside-aware hedging.
+% The reward shaping technique (\cite{sutton2018reinforcement,devlin2011theoretical}) suggests stacking an ensemble of maturities: along a path $\{S_t\}$ up to horizon $T$, the agent simultaneously manages portfolios $\Pi_t^{(i)}$ for expiries $i=1,\dots,T$, choosing hedge positions $u_t^{(i)}$ for all $t<i$.
+% This provides intermediate feedback and lets the policy learn from short horizons before scaling to the full maturity.
+% A formal definition of the RLOP problem is given as follows.
+
+The Replication Learning of Option Pricing (RLOP) adopts a forward-looking formulation.
+The agent trades a self-financing portfolio and receives rewards based on how closely its terminal wealth matches the option payoff.
+In contrast to Deep Hedging (\cite{buehler2019deep}), which may implicitly allow a speculative component (\cite{franccois2025difference}), RLOP’s shortfall-probability objective promotes capital preservation and downside-sensitive hedging.
+Motivated by reward shaping (\cite{sutton2018reinforcement}), we stack an ensemble of maturities: along a sample path ${S_t}$ over horizon $T$, the agent jointly manages portfolios $\Pi_t^{(i)}$ for expiries $i=1,\dots,T$, selecting hedge positions $u_t^{(i)}$ for all $t<i$.
+This yields intermediate learning signals and allows the policy to learn on shorter horizons before extending to the full maturity.
+A formal definition of the RLOP problem is given below.
+
+
+\begin{defn}
+The transitional rate
+% from $X_{t}=\left(t,S_{t}\right)$ to $X_{t+1}$ is defined as
+% \begin{align*}
+% $p\left(X_t,R_{t+1}\big|X_{t+1},u_{t}^{\left(i\right)}\right)$
+$p(X_t,R_{t+1}|X_{t+1},u_{t}^{\left(i\right)})$
+is defined as 
+$\rho\left(S_{t},S_{t+1}\right) \boldsymbol{1}_{t<i}$
+% where $\rho$ is characterized by the discrete version geometric Brownian motion.
+% The associated reward function is $R_{i}=H\left(h\left(S_{i}\right),\Pi_{i}^{\left(i\right)}\right)$
+% where the penalty function $H$ measures how accurate
+% the portfolio value $\Pi_{i}^{\left(i\right)}$ replicates the option
+% payoff $h\left(S_{i}\right)$.
+where $\rho$ is specified by the discrete-time geometric Brownian motion dynamics.
+The corresponding reward is defined as $R_i = H\left(h(S_i), \Pi_i^{(i)}\right)$, where the penalty function $H$ quantifies the replication accuracy of the portfolio value $\Pi_i^{(i)}$ relative to the option payoff $h(S_i)$.
+\end{defn}
+
+In practice, we take $H(x,y)=-|x-y|$ or its squared variant, which directly penalizes terminal replication error.
+The structure of the RLOP approach is illustrated in \cref{fig:qlbs-illustration}.

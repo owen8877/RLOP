@@ -1,0 +1,132 @@
+% \section{Learning Algorithms and Numerical Verification}
+\subsection{Neural Architecture and Training System}
+\label{sec:architecture}
+
+The neural components shared by both QLBS and RLOP embody two design
+principles that go beyond a straightforward application of actor-critic
+methods.
+First, rather than regressing a target quantity directly, both networks embed
+a known closed-form function as a differentiable layer inside the
+computational graph, letting gradient information flow end-to-end through
+that layer.
+Second, RLOP introduces a dedicated third network whose training signal
+derives from full-trajectory error, not per-step advantage, yielding a
+genuinely three-component learning system.
+
+\paragraph{Differentiable Analytical Layer.}
+A na\"ive design would train the value network to regress option prices
+directly.
+This is numerically problematic: prices span several orders of magnitude
+across strike and maturity, the regression target is regime-sensitive, and
+the network receives no guidance about the geometric structure of the
+pricing surface.
+
+Instead, each network is designed to output a single positive scalar
+$\hat\sigma$ --- a \emph{latent volatility} --- which is then passed into
+a closed-form pricing formula $\mathcal{P}$ implemented as a differentiable
+PyTorch module:
+\begin{equation}
+  \hat{V}(x;\,\theta)
+  = \mathcal{P}\!\bigl(S,\,K,\,\tau,\,r,\;f_\theta(x)\bigr),
+  \label{eq:latent-vol}
+\end{equation}
+where $x$ is the input state and $f_\theta:\mathbb{R}^9\to\mathbb{R}_{>0}$
+is the residual network.
+Because $\mathcal{P}$ is differentiable in all its arguments, gradients
+flow end-to-end from pricing errors back into $\theta$ without any
+approximation.
+This design is directly analogous to \emph{physics-informed neural networks}
+(PINNs) \cite{raissi2019physics}: rather than learning the entire
+input--output map from scratch, the network learns only the correction
+that the analytical model cannot capture, while the closed-form handles the
+well-understood structure.
+As a result, the effective network output is interpretable --- it recovers
+the implied-volatility surface as an emergent by-product of training,
+not as a post-hoc diagnostic.
+
+\paragraph{CombinedResNet with Embedded Input Normalisation.}
+The nine-dimensional raw state
+$(S_t,\, t,\, T\!-\!t,\, K,\, r,\, \mu,\, \sigma,\, \lambda,\, c)$
+contains quantities whose natural scale varies by orders of magnitude across
+training instances.
+Rather than handling this as a separate preprocessing step, we embed the
+following coordinate transforms directly into the network's \texttt{forward}
+pass, ensuring they are always applied consistently during both training
+and inference:
+\begin{equation}
+  \tilde{m} = \frac{\log(S_t/K) + r\,(T\!-\!t)}{\sigma\sqrt{T\!-\!t}},
+  \quad
+  \tilde{\tau} = \sqrt{\frac{T\!-\!t}{T_{\mathrm{ref}}}},
+  \label{eq:input-transform}
+\end{equation}
+where $\tilde{m}$ is the log-moneyness normalised by the at-the-money
+time-value scale, and $T_{\mathrm{ref}}$ is a fixed reference maturity.
+Embedding these transforms in the architecture plays the same role as
+tokenisation or positional encoding in sequence models: structural knowledge
+about the input domain is encoded once at the architecture level rather than
+learned from data.
+
+The backbone is a \emph{CombinedResNet} of $D$ stacked residual blocks
+\cite{he2016deep} with configurable depth $D\in\{2,3,4\}$.
+Each block applies a two-layer MLP with layer normalisation and a skip
+connection.
+The policy head outputs a Gaussian distribution
+$\pi(a\mid x) = \mathcal{N}\!\left(\mu_\pi(x;\theta_\mu),\,
+\sigma_\pi(x;\theta_\sigma)^2\right)$,
+where $\mu_\pi$ is produced by the CombinedResNet and $\sigma_\pi$ by a
+separate branch with a sigmoid clamp,
+$\sigma_\pi = 0.01 + 0.90\cdot\mathrm{sigmoid}(g_\theta(x))$,
+bounding exploration noise away from both zero and saturation.
+A value network of identical architecture provides a learned baseline for
+variance reduction.
+Both networks are trained with REINFORCE \cite{williams1992simple} and
+optimised by Adam at learning rate $10^{-4}$.
+
+\paragraph{RLOP: Three-Network Decoupled Design.}
+Standard actor-critic algorithms maintain two learned components: a policy
+$\pi_\theta$ and a value baseline $V_\phi$.
+RLOP extends this to three networks by introducing a dedicated
+\emph{PriceEstimator} $P_\psi$, whose training objective and signal
+source differ fundamentally from those of $V_\phi$:
+\begin{itemize}[leftmargin=1.2em,topsep=1pt,itemsep=0pt]
+  \item \textbf{Policy} $\pi_\theta$: updated by policy gradient using
+    per-step advantages computed from $V_\phi$.
+  \item \textbf{Value baseline} $V_\phi$: trained on per-step discounted
+    returns $G_t$ to reduce gradient variance (standard REINFORCE baseline).
+  \item \textbf{PriceEstimator} $P_\psi$: trained once per episode on the
+    \emph{full-trajectory replication error}
+    $\delta^{(i)} = h(S_T) - \Pi_T^{(i)}$, aggregated across all
+    concurrently managed maturities $i=1,\dots,T$.
+\end{itemize}
+The key insight is that $V_\phi$ and $P_\psi$ answer different questions:
+$V_\phi$ estimates the expected cost-to-go from a state, while $P_\psi$
+learns the fair replication price from terminal outcomes.
+Conflating these two objectives into a single critic, as standard
+actor-critic would, degrades training stability when the reward is dominated
+by terminal rather than per-step feedback.
+The PriceEstimator shares its backbone architecture with the policy,
+so gradient information from trajectory-level pricing errors flows
+indirectly into $\pi_\theta$ through the shared feature representation,
+without requiring an explicit auxiliary loss on the policy.
+
+\paragraph{Scalable Parallel Training and Two-Mode Inference.}
+Both environments are implemented as fully vectorised PyTorch modules
+supporting $N_{\mathrm{par}}=2{,}500$ parallel simulation paths per
+episode.
+Each call to \texttt{env.step()} advances all paths simultaneously via
+batched tensor operations, eliminating per-episode Python overhead and
+enabling GPU-accelerated training.
+
+For downstream evaluation --- computing hedge ratios and option values
+across large Monte Carlo ensembles --- the trained networks are loaded in a
+\emph{grad-fn inference mode}: gradient computation is disabled and
+operations are pinned to CPU, decoupling the memory budget for training from
+the throughput requirements of path-wise simulation.
+This two-mode design (GPU training / CPU inference) is a practical
+engineering choice that keeps wall-clock evaluation time tractable when
+sweeping across many contract configurations.
+
+The full ablation covers depth $D\in\{2,3,4\}$, risk-aversion coefficients
+$\lambda\in\{0.01,0.1,1.0\}$, and ten independent replicas per
+configuration, yielding 90 trained models per method and providing
+the statistical confidence intervals reported in \cref{sec:empirical}.

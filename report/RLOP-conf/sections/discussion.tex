@@ -1,0 +1,59 @@
+\section{Conclusion}
+
+This paper develops modified QLBS and novel RLOP frameworks for autonomous option hedging, addressing the systemic risks inherent in the decoupling of model calibration from execution performance. The empirical cost-risk maps demonstrate a systematic cost advantage, with reinforcement learning consistently minimizing turnover costs across all tested regimes. While diagnostics like IVRMSE favor parametric models, we demonstrate that static fit is an insufficient proxy for hedging quality under market frictions. Our distribution analysis reveals that RL policies materially mitigate tail-risk losses, particularly during operationally salient periods like the 2020 liquidity crash. RLOP emerges as a critical tool for capital-constrained desks by prioritizing survival-centric hedging over loss magnitude. Future research will explore computational complexity, path-dependent instruments, funding-spread jumps, and model risk to further assess the macroeconomic implications of AI-augmented risk management on market equilibrium.
+
+%This paper constructs the modified QLBS and RLOP as two mathematically sound environments that enable RL methods in the field of option pricing and take transaction cost and risk aversion into consideration. QLBS behaves as a balanced, cost-conscious hedge that preserves familiar risk profiles while shaving off shortfall probability and trading cost, especially for volatile underlyings. RLOP accepts poorer IV fits and sometimes larger RMSE in exchange for sizable reductions in the probability and cost of large hedging losses, thus emphasing tail risk. This paper extends QLBS into a fully implemented algorithm that incorporates transaction costs and risk aversion for better market adaptability and introduces the novel RLOP model, which improves computational efficiency and tail risk management. The empirical results have practical applications for both trading desks and methodological research. Furthermore, computational complexity scale, path-dependent instruments, jumps in funding spreads, and model risk in the underlying dynamics should be included to enhance option pricing accuracy and efficiency in our future research.
+
+
+% In this project, we construct the modified QLBS and RLOP as two mathematically
+% sound environments that enable RL methods in the field of option pricing.
+% We specify the environment details as well as how the agent is parametrized
+% and trained. We provide a few numerical experiments which compare
+% the learned optimal hedging against the BS predictions. We also study
+% how the factors affect the optimal price and position. We hope that
+% this work can inspire and motivate more research into the cross-discipline
+% study between finance and machine learning.
+
+% We would like to discuss a few possible future directions, starting
+% from the financial aspects. We focus on European call options in this
+% report, but in general, it shall also apply to the put option or other
+% options that can only exercise at the terminal time. It is not clear
+% whether the QLBS or RLOP model can generalize to the American or even
+% swing options that are useful in electricity trading. Besides, the
+% transaction cost model proposed in Sec. \ref{subsec:Trading-Cost}
+% can be greatly improved to allow fine models on the order density,
+% or even influence on the mid price.
+
+% There are also a few open questions on the mathematics side. It could
+% be beneficial to analyze the theoretical optimal hedging strategy
+% in the discrete time model. We have provided an analogous to the stochastic
+% integral in the earlier sections, which might help in analyzing the
+% temporal discretization error. Besides, the modified QLBS reward function
+% (\cref{eq:qlbs-modified-V}) is no longer time translational invariant,
+% so one has to train a new model if the maturity time of the option
+% changes. It would be a great improvement if one finds an equivalent
+% or a similar formulation where the value function is translational
+% invariant while giving homogeneous rewards over time.
+
+% We also have a few comments on the learning/sampling algorithms. One
+% common drawback of the two methods is that the computational complexity
+% scales quadratically as the maturity time $T$. The modified QLBS
+% model requires computing a conditional expectation at each time step,
+% which is not of constant cost. The RLOP model stacks $T$ pricing
+% tasks together, each lasting one more period than the previous one,
+% leading to a quadratic cumulative cost. Another issue is that we use
+% REINFORCE with baseline as the learning algorithm, which can be replaced
+% by the actor-critic (or even the soft version) to improve performance.
+% More time is appreciated since we have limited time in the project
+% to try different possibilities.
+
+% There are controversial conclusions as far as what the numerical experiments
+% show. In general, the agents learn to price a higher price if the
+% current price $S_{t}$ is higher, or the risk aversion parameter $\lambda$
+% (or the friction parameter $\epsilon$) is larger. However, the two
+% models predict the optimal hedging strategy differently, especially
+% when large friction is anticipated. The modified QLBS agent prefers
+% to hedge more than the frictionless case while the RLOP agent inclines
+% to hedge less. This discrepancy might be the key to understanding
+% the difference between these two models and eventually the option
+% pricing problem.

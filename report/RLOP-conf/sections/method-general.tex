@@ -1,0 +1,98 @@
+% \section{Replication Pricing and Reinforcement Learning Framework}
+\section{Replication Pricing and RL}
+\label{sec:replication}
+% Replication-based pricing constructs a self-financing portfolio whose terminal value matches the option payoff.
+% In the classical framework by \cite{black1973pricing}, this is achieved through dynamic rebalancing of a hedge portfolio.
+% Given a price process $\left\{ S_{t}\right\}$
+% adapted to a filtration $\left\{ \cF_{t}\right\} $, the portfolio consists of $u_t$ units of the underlying asset and a risk-free deposit $B_{t}$, with value
+% $
+% \Pi_{t}:=u_{t}S_{t}+B_{t}.
+% $
+% The self-financing condition requires that rebalancing does not inject or withdraw capital, yielding
+% \begin{equation}
+% u_{t}S_{t+1}+e^{r\Delta t}B_{t}=u_{t+1}S_{t+1}+B_{t+1} + \text{TC}(u_{t+1}-u_t, S_{t+1}) \label{eq:self-financing}
+% \end{equation}
+% where $r$ denotes the risk-free rate and $\text{TC}(\cdot)$ represents the transaction cost.
+% \Cref{eq:self-financing} governs the portfolio evolution and determines the capital required to sustain trading.
+% Throughout, the underlying price is assumed to follow a geometric Brownian motion
+% $ \d S_t=\mu \,S_t \d{t} + \sigma \,S_t \d{W_t} $ 
+% with drift $\mu$, volatility $\sigma$, and Wiener process $W_t$. 
+
+
+Replication-based option pricing builds a self-financing trading strategy whose terminal portfolio value replicates the option payoff.
+In the classical setting of \cite{black1973pricing}, replication is achieved by continuously (or discretely) rebalancing a hedging portfolio.
+Given a price process ${S_t}$ adapted to a filtration ${\cF_t}$, the portfolio holds $u_t$ units of the underlying asset and a risk-free account $B_t$, with portfolio value
+$
+\Pi_t := u_t S_t + B_t .
+$
+The self-financing constraint stipulates that rebalancing is funded entirely by the existing portfolio, so no external cash is added or withdrawn, which leads to
+{\small%
+\begin{equation}
+u_{t}S_{t+1}+e^{r\Delta t}B_{t}=u_{t+1}S_{t+1}+B_{t+1} + \text{TC}(u_{t+1}-u_t, S_{t+1}) \label{eq:self-financing}
+\end{equation}
+}where $r$ is the risk-free rate and $\text{TC}(\cdot)$ denotes transaction costs.
+\Cref{eq:self-financing} characterizes the portfolio dynamics and, in particular, the capital needed to maintain trading over time.
+Throughout, we assume the underlying price follows geometric Brownian motion,
+$ \d S_t=\mu ,S_t \d{t} + \sigma ,S_t \d{W_t} $,
+with drift $\mu$, volatility $\sigma$, and Wiener process $W_t$.
+
+
+
+% Reinforcement learning (RL) formulates sequential decision problems via a Markov decision process (MDP).
+% Per \cite{sutton2018reinforcement,bertsekas2019reinforcement},
+% an MDP is specified by a state space $\mathcal S$, an action space $\mathcal A$, a transition kernel $p(\cdot \mid s,a)$, and a reward function $R(s,a)$. 
+% A policy $\pi$ maps the current state to an action; in our setting, the policy corresponds to a hedging rule that updates the position over time.
+% Motivated by the Girsanov transform \cite{liptser2013statistics}, we cast option replication as an MDP with state $(t,X_t)$, where the normalized price process is
+% % \begin{equation}
+% $
+% X_t := -\Bigl(\mu - \tfrac{\sigma^2}{2}\Bigr)t + \log S_t .
+% $
+% % \label{eq:normalized-price}
+% % \end{equation}
+% The action $a_t$ represents the hedge position selected from the normalized input $X_t$.
+% The transition kernel $p$ (and hence the realized rewards) depends on the model construction (e.g., QLBS versus RLOP as discussed in later paragraphs). 
+% To distinguish representations, we use $a_t$ for the hedge chosen as a function of $X_t$, while $u_t$ denotes the hedge position when expressed on the original price scale $S_t$.
+
+Reinforcement learning (RL) models sequential decision-making problems through a Markov decision process (MDP).
+Following \cite{sutton2018reinforcement}, an MDP is characterized by a state space $\mathcal S$, an action space $\mathcal A$, a transition kernel $p(\cdot \mid s,a)$, and a reward function $R(s,a)$.
+A policy $\pi$ maps the current state to an action; in our context, $\pi$ serves as a hedging rule that updates the trading position over time.
+Inspired by the Girsanov transform, we formulate option replication as an MDP with state $(t,X_t)$, where the normalized price process is
+$
+X_t := -\Bigl(\mu - \tfrac{\sigma^2}{2}\Bigr)t + \log S_t .
+$
+The action $a_t$ denotes the hedge position chosen based on the normalized input $X_t$.
+The transition kernel $p$ (and thus the realized rewards) is determined by the particular model specification (e.g., QLBS versus RLOP, as discussed below).
+We use $a_t(X_t)$ for the hedge position in normalized units, while $u_t(S_t)$ corresponds to original units.
+
+
+
+
+
+% As established by \cite{halperin2020qlbs}, the price from the Black-Scholes model can be characterized in discrete time as the expected value of the replicating portfolio $\Pi_t$.
+% This insight leads to the control problem where the fair option price is the maximum of the state value function
+% $
+% \tilde{V}_{t}^{\pi}\left(X_{t}\right)=\bE^{\pi}_t\left[-\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}e^{-r\left(\tau-t\right)}\text{Var}_t\left[\Pi_{\tau}\left(X_{\tau}\right)\right]\right]
+% $
+% where $\lambda$ is the risk-aversion coefficient and $\bE_t$ is conditional expectation under $\cF_t$.
+% Under this formulation, the option price equals the negative of the optimal value function.
+
+As shown in \cite{halperin2020qlbs}, the Black-Scholes price admits a discrete-time characterization as the conditional expectation of the replicating portfolio value $\Pi_t$.
+A control problem is thus introduced where the option value matches the negated state value function $\tilde{V}_{t}^{\pi}\left(X_{t}\right)$.
+% This observation motivates a control problem in which the fair option price is given by the maximized state value function
+% $$
+% \tilde{V}_{t}^{\pi}\left(X_{t}\right)=\bE^{\pi}_t\left[-\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}e^{-r\left(\tau-t\right)}\text{Var}_t\left[\Pi_{\tau}\left(X_{\tau}\right)\right]\right]
+% $$
+% where $\lambda$ denotes the risk-aversion parameter and $\bE_t$ is the conditional expectation with respect to $\cF_t$.
+% Within this setup, the option price is equal to the negative of the optimal value function.
+% \cite{halperin2020qlbs} derives a closed-form maximizer of 
+% $\tilde{V}_{t}^{\pi}$
+% by exploiting its quadratic mean-variance structure,
+% which is feasible when the correlation between  $\Pi_{t+1}$ and $\Delta S$ is known.
+% However, this approach does not generalize beyond the stylized setting.
+% For a given payoff function $h$, the portfolio value $\Pi_t$ that satisfies the terminal condition $\Pi_T = h(S_T)$ is typically non-adapted under the self-financing condition (\cref{eq:self-financing}), making direct application of standard RL algorithms nontrivial.
+\cite{halperin2020qlbs} obtains a closed-form maximizer of
+$\tilde{V}_{t}^{\pi}$
+by leveraging its quadratic mean-variance structure.
+% , which is tractable when the correlation between $\Pi_{t+1}$ and $\Delta S$ is available.
+Nonetheless, this method is tightly tied to the empirical correlation between $\Pi_{t+1}$ and $\Delta S$ and does not readily extend to more general settings.
+For a given payoff function $h$, enforcing the terminal condition $\Pi_T = h(S_T)$ under the self-financing constraint (\cref{eq:self-financing}) typically yields a portfolio process $\Pi_t$ that is non-adapted, which makes the direct use of standard RL algorithms nontrivial.

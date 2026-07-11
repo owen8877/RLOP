@@ -1,0 +1,98 @@
+\begin{tikzpicture}[x=0.8cm,y=0.8cm,>=Stealth]
+\begin{scope}[yscale=-1]
+  % ---------- styles ----------
+  \tikzset{
+    tl/.style={line width=0.9pt},
+    pf/.style={line width=0.9pt},
+    tick/.style={line width=0.9pt},
+    darr/.style={dashed, line width=0.8pt, ->},
+    dot/.style={circle, fill=black, inner sep=1.3pt},
+  }
+
+  % ---------- key x-positions ----------
+  % Use symbolic positions for readability; adjust if you want different spacing
+  \def\xO{0}
+  \def\xOne{1}
+  \def\xTwo{2}
+  \def\xTmid{6}  % position of t on the top timeline
+  \def\xT{9}     % position of T on the top timeline
+
+  % ---------- top timeline ----------
+  \draw[tl] (\xO,0) -- (\xT,0);
+
+  % ticks + labels on timeline
+  \foreach \x/\lab in {\xO/0,\xOne/1,\xTwo/2,\xTmid/$t$,\xT/$T$}{
+    \draw[tick] (\x,0.12) -- (\x,-0.12);
+    \node[below] at (\x,0.18) {\lab};
+  }
+  \node[below] at (3.9,0.2) {$\cdots$};
+  \node[below] at (7.5,0.2) {$\cdots$};
+
+  % ---------- left labels ----------
+  \node[anchor=east] at (-0.25,-0.3) {portfolio};
+  \node[anchor=east,color=gray] at (-0.25,-0.9) {\#1};
+  % \node[anchor=east,color=gray] at (-0.25,-2.00) {\#2};
+  \node[anchor=east] at (-0.25,-2.00) {\#$t$};
+  \node[anchor=east,color=gray] at (-0.25,-3.3) {\#$T$};
+
+  % ---------- portfolio #1 (0 -> 1) ----------
+  \node[dot,color=gray] at (\xO,-0.90) {};
+  \draw[pf,color=gray] (\xO,-0.90) -- (\xOne,-0.90);
+  % bracket indicating u_0^(1)
+  % \draw[line width=0.9pt] (\xO+0.05,-1.52) -- (\xOne-0.05,-1.52);
+  % \draw[line width=0.9pt] (\xO+0.05,-1.52) -- (\xO+0.05,-1.42);
+  % \draw[line width=0.9pt] (\xOne-0.05,-1.52) -- (\xOne-0.05,-1.42);
+  \node[above,color=gray] at (\xO+0.5,-0.90) {$u^{(1)}_{0}$};
+
+  % reward arrow R1 at time 1
+  \draw[darr,color=gray] (\xOne,-0.90) -- (\xOne,-0.2);
+  \node[right,color=gray] at (\xOne, -0.7) {$R_{1}$};
+
+  % ---------- portfolio #2 (0 -> 2) ----------
+  % \node[dot,color=gray] at (\xO,-2.00) {};
+  % \draw[pf,color=gray] (\xO,-2.00) -- (\xTwo,-2.00);
+  % \draw[tick,color=gray] (\xOne,-2.00+0.12) -- (\xOne,-2.00-0.12);
+  % \node[above,color=gray] at (\xO+0.5,-2.00) {$u^{(2)}_{0}$};
+  % \node[above,color=gray] at (\xOne+0.50,-2.00) {$u^{(2)}_{1}$};
+
+  % % reward arrow R2 at time 2
+  % \draw[darr,color=gray] (\xTwo,-2.00) -- (\xTwo,-0.2);
+  % \node[right,color=gray] at (\xTwo, -1.10) {$R_{2}$};
+
+  % % vertical ellipsis between #2 and #t
+  \node[color=gray] at (-0.55,-1.55) {$\vdots$};
+
+  % ---------- portfolio #t (0 -> t) ----------
+  \node[dot] at (\xO,-2.0) {};
+  \draw[pf] (\xO,-2.0) -- (\xTmid,-2.0);
+  \draw[tick] (\xOne,-2.0+0.12) -- (\xOne,-2.0-0.12);
+  \draw[tick] (\xOne+1.0,-2.0+0.12) -- (\xOne+1.0,-2.0-0.12);
+  \draw[tick] (\xTmid-1.0,-2.0+0.12) -- (\xTmid-1.0,-2.0-0.12);
+  \node[above] at (\xO+0.5,-2.0) {$u^{(t)}_{0}$};
+  \node[above] at (\xOne+0.50,-2.0) {$u^{(t)}_{1}$};
+  \node[above] at (\xTmid-0.5,-2.0) {$u^{(t)}_{t-1}$};
+  \node[above] at (3.9,-2.0) {$\cdots$};
+
+  % reward arrow Rt at time t
+  \draw[darr] (\xTmid,-2.0) -- (\xTmid,-0.2);
+  \node[right] at (\xTmid, -0.9) {$R_{t}$};
+
+  % vertical ellipsis between #t and #T
+  \node[color=gray] at (-0.55,-2.70) {$\vdots$};
+
+  % ---------- portfolio #T (0 -> T) ----------
+  \node[dot,color=gray] at (\xO,-3.3) {};
+  \draw[pf,color=gray] (\xO,-3.3) -- (\xT,-3.3);
+  \draw[tick,color=gray] (\xOne,-3.3+0.12) -- (\xOne,-3.3-0.12);
+  \draw[tick,color=gray] (\xOne+1,-3.3+0.12) -- (\xOne+1,-3.3-0.12);
+  \draw[tick,color=gray] (\xT-1,-3.3+0.12) -- (\xT-1,-3.3-0.12);
+  \node[above,color=gray] at (\xO+0.5,-3.3) {$u^{(T)}_{0}$};
+  \node[above,color=gray] at (\xOne+0.50,-3.3) {$u^{(T)}_{1}$};
+  \node[above,color=gray] at (\xT-0.5,-3.3) {$u^{(T)}_{T-1}$};
+  \node[above,color=gray] at (5.0,-3.3) {$\cdots$};
+
+  % reward arrow RT at time T
+  \draw[darr,color=gray] (\xT,-3.3) -- (\xT,-0.2);
+  \node[right,color=gray] at (\xT, -1.5) {$R_{T}$};
+\end{scope}
+\end{tikzpicture}

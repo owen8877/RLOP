@@ -1,0 +1,149 @@
+% \section{Appendix}
+% \section{Additional Market-Data Results: Horizon Robustness}
+% \label{app:market_horizon}
+
+% This appendix reports the $\tau\in\{14,56\}$ maturity-bucket counterparts of the main-text $\tau=28$d analysis.
+% % Figures~\ref{fig:net_cdf_tau14}--\ref{fig:risk_cost_tau56} replicate the distributional and efficiency views, while
+% Tables~\ref{tab:scorecard_14d}--\ref{tab:ivrmse_56d_whole} provide tail-risk and static-fit summaries.
+% All definitions match Section~\ref{sec:empirical_market} unless stated otherwise.
+
+% -------------------------
+% CDF for 14d
+% -------------------------
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=\textwidth]{empirical/net_cdf_grid_tau14.png}
+%   \caption{Empirical CDFs of after-cost net hedging outcome $\mathrm{PnL}_T^{\mathrm{net}}$ for $\tau=14$d.
+%   Columns correspond to SPY 2020Q1, SPY 2025Q2, XOP 2020Q1, and XOP 2025Q2.
+%   Top row: ATM ($K/F=1$). Bottom row: mildly out-of-the-money ($K/F=1.03$).
+%   Right-shifted curves indicate improved after-cost outcomes.}
+%   \label{fig:net_cdf_tau14}
+% \end{figure}
+
+% -------------------------
+% CDF for 56d
+% -------------------------
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=\textwidth]{empirical/net_cdf_grid_tau56.png}
+%   \caption{Empirical CDF overlays of after-cost net hedging P\&L $\mathrm{PnL}_T^{\mathrm{net}}$ for the $\tau=56$d bucket.
+%   Layout and interpretation match Figure~\ref{fig:net_cdf_tau14}.}
+%   \label{fig:net_cdf_tau56}
+% \end{figure}
+
+% -------------------------
+% Scorecard for 14d
+% -------------------------
+% \begin{table}[H]
+% \centering
+% \small
+% \setlength{\tabcolsep}{5pt}
+% \renewcommand{\arraystretch}{1.15}
+% \begin{tabular}{l c c c c}
+% \hline
+% Setting ($\tau=14$) & Best $\mathrm{ES}_{5\%}$ & Best $\mathrm{ES}_{10\%}$ & Lowest shortfall prob. & $n_{\text{days}}$ \\
+% \hline
+% SPY 2020Q1 ATM          & BS (8.757)    & BS (8.210)    & JD/SV/QLBS/RLOP (0.93) & 27 \\
+% SPY 2020Q1 $K/F{=}1.03$ & QLBS (6.187)  & QLBS (5.154)  & SV (0.70)              & 27 \\
+% SPY 2025Q2 ATM          & BS (17.711)   & JD (13.385)   & JD (0.84)              & 62 \\
+% SPY 2025Q2 $K/F{=}1.03$ & SV (14.535)   & BS (12.200)   & RLOP (0.60)            & 62 \\
+% XOP 2020Q1 ATM          & RLOP (1.201)  & RLOP (0.987)  & BS/SV/QLBS (0.83)      & 29 \\
+% XOP 2020Q1 $K/F{=}1.03$ & RLOP (0.935)  & RLOP (0.769)  & RLOP (0.66)            & 29 \\
+% XOP 2025Q2 ATM          & QLBS (5.096)  & BS (3.340)    & SV/QLBS (0.52)         & 56 \\
+% XOP 2025Q2 $K/F{=}1.03$ & RLOP (2.711)  & RLOP (2.210)  & SV (0.46)              & 56 \\
+% \hline
+% \end{tabular}
+% \caption{Tail scorecard for $\tau=14$d bucket: lowest $\mathrm{ES}_{5\%}$, $\mathrm{ES}_{10\%}$, and shortfall probability $\mathbb{P}(\mathrm{PnL}_T^{\mathrm{net}}<0)$ under equal-day weighting; $n_{\text{days}}$ is the number of trading days.}
+% \label{tab:scorecard_14d}
+% \end{table}
+
+% -------------------------
+% Scorecard for 56d
+% -------------------------
+% \begin{table}[H]
+% \centering
+% \small
+% \setlength{\tabcolsep}{5pt}
+% \renewcommand{\arraystretch}{1.15}
+% \begin{tabular}{l c c c c}
+% \hline
+% Setting ($\tau=56$) & Best $\mathrm{ES}_{5\%}$ & Best $\mathrm{ES}_{10\%}$ & Lowest shortfall prob. & $n_{\text{days}}$ \\
+% \hline
+% SPY 2020Q1 ATM          & BS (9.963)    & BS (9.900)    & SV (0.81)   & 16 \\
+% SPY 2020Q1 $K/F{=}1.03$ & BS (8.002)    & BS (7.478)    & SV (0.75)   & 16 \\
+% SPY 2025Q2 ATM          & BS (22.015)   & JD (14.806)   & JD (0.23)   & 62 \\
+% SPY 2025Q2 $K/F{=}1.03$ & RLOP (15.437) & RLOP (12.079) & RLOP (0.31) & 62 \\
+% XOP 2020Q1 ATM          & RLOP (0.424)  & RLOP (0.417)  & RLOP (0.69) & 16 \\
+% XOP 2020Q1 $K/F{=}1.03$ & RLOP (0.424)  & RLOP (0.340)  & RLOP (0.44) & 16 \\
+% XOP 2025Q2 ATM          & QLBS (3.898)  & QLBS (3.157)  & SV (0.40)   & 45 \\
+% XOP 2025Q2 $K/F{=}1.03$ & QLBS (2.893)  & QLBS (2.293)  & QLBS (0.51) & 45 \\
+% \hline
+% \end{tabular}
+% \caption{Tail scorecard for $\tau=56$d bucket: lowest $\mathrm{ES}_{5\%}$, $\mathrm{ES}_{10\%}$, and shortfall probability $\mathbb{P}(\mathrm{PnL}_T^{\mathrm{net}}<0)$ under equal-day weighting; $n_{\text{days}}$ is the number of trading days.}
+% \label{tab:scorecard_56d}
+% \end{table}
+
+% -------------------------
+% Risk-cost map for 14d
+% -------------------------
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=\textwidth]{empirical/risk_cost_map_tau14.png}
+%   \caption{Risk--cost maps for the $\tau=14$d bucket.
+% Each point plots average transaction cost $\mathbb{E}[\mathrm{TC}_T]$ versus replication dispersion $\mathrm{RMSE}(\xi_T)$, with $\xi_T=\mathrm{PnL}_T^{\mathrm{net}}+\mathrm{TC}_T$.
+% Error bars are 95\% confidence intervals; lower-left indicates cheaper hedging with lower replication dispersion}
+%   \label{fig:risk_cost_tau14}
+% \end{figure}
+
+% -------------------------
+% Risk-cost map for 56d
+% -------------------------
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{empirical/risk_cost_map_tau56.png}
+  \caption{Risk--cost maps for the $\tau=56$d bucket. Layout and interpretation match Figure~\ref{fig:risk_cost_tau14}.}
+  \label{fig:risk_cost_tau56}
+\end{figure}
+
+
+% % -------------------------
+% % Whole-sample IVRMSE: 14d
+% % -------------------------
+% \begin{table}[H]
+% \centering
+% \begin{tabular}{cc c c c c c c}
+% \toprule
+% Moneyness, $\tau$ & Period & Asset & BS & JD & SV & QLBS & RLOP \\
+% \midrule
+% \multirow{4}{*}{Whole sample, 14d}
+% & \multirow{2}{*}{2020Q1} & SPY & 9.15  & \textbf{5.53} & 7.47  & 12.62 & 10.74 \\
+% &                        & XOP & 18.77 & \textbf{16.39} & 18.87 & 20.39 & 24.94 \\
+% \cmidrule(lr){2-8}
+% & \multirow{2}{*}{2025Q2} & SPY & 16.44 & 13.60 & 10.81 & 11.83 & \textbf{9.49} \\
+% &                        & XOP & 15.17 & \textbf{9.56} & 12.31 & 15.16 & 20.10 \\
+% \bottomrule
+% \end{tabular}
+% \caption{Equal-day IVRMSE for the whole-slice $\tau=14$d bucket. Lower is better; bold denotes the row-wise best within each asset and period.}
+% \label{tab:ivrmse_14d_whole}
+% \end{table}
+
+% % -------------------------
+% % Whole-sample IVRMSE: 56d
+% % -------------------------
+% \begin{table}[H]
+% \centering
+% \begin{tabular}{cc c c c c c c}
+% \toprule
+% Moneyness, $\tau$ & Period & Asset & BS & JD & SV & QLBS & RLOP \\
+% \midrule
+% \multirow{4}{*}{Whole sample, 56d}
+% & \multirow{2}{*}{2020Q1} & SPY & 6.55  & \textbf{1.23} & 2.27  & 8.73  & 8.41 \\
+% &                        & XOP & 5.94  & 3.34 & \textbf{3.18} & 6.01  & 19.91 \\
+% \cmidrule(lr){2-8}
+% & \multirow{2}{*}{2025Q2} & SPY & 9.27  & 6.06 & \textbf{4.36} & 7.44  & 7.05 \\
+% &                        & XOP & 6.88  & 3.79 & \textbf{3.76} & 7.21  & 14.74 \\
+% \bottomrule
+% \end{tabular}
+% \caption{Equal-day IVRMSE for the whole-slice $\tau=56$d bucket. Lower is better; bold denotes the row-wise best within each asset and period.}
+% \label{tab:ivrmse_56d_whole}
+% \end{table}

@@ -1,0 +1,156 @@
+
+\section{RLOP: Replication Learning of Option Pricing}
+
+In this section, we propose a novel algorithm that prices a call/put
+option via portfolio replication, but this method uses a forward view
+which is fundamentally different from the QLBS approach. The idea
+is simple: the agent manages a portfolio which yields a reward at
+the terminal time based on how accurate the portfolio value is compared
+to the option payoff. This naive idea has the problem that the reward
+is zero for quite a long time until the maturity, which is usually
+not good for shaping the agent's behavior. To deal with this downside,
+we propose to group a few options as an ensemble so that the agent
+gets a stream of feedbacks during each episode. To be specific, given
+a (simulated or historical) path of the asset price $\left\{ S_{t}\right\} $,
+maturity time $T$, and the payoff function $h$, the agent needs
+to manages (at most) $T$ portfolios $\left\{ \Pi_{t}^{\left(i\right)}\right\} _{i=1}^{T}$
+at the same time, where the $k$-th portfolio replicates the option
+that terminals at time step $k$. In other words, for every $i\in\left[t+1,T\right]$,
+the agent proposes the hedge position $u_{t}^{\left(i\right)}$ based
+on the current time step $t$, the asset price $S_{t}$, and the balance
+of the $i$-th portfolio $\Pi_{t}^{\left(i\right)}$. We hold the
+belief that the agent is able to learn the hedging strategy step by
+step from small $t$ to the terminal time $T$.
+
+\subsection{MDP Formulation}
+
+We now rigorously define the aforementioned problem as a MDP. Given
+a maturity time $i$, the state space consists of tuples containing
+the time step $t$, the asset price $S_{t}$, and the current portfolio
+value $\Pi_{t}^{\left(i\right)}$. The action space is $\bR$ that
+contains all possible hedging positions. The transitional probability
+(density) function is defined as
+\[
+p\left(\left(t,S_{t},\Pi_{t}^{\left(i\right)}\right),u_{t}^{\left(i\right)}\to\left(t',S_{t'},\Pi_{t'}^{\left(i\right)}\right),R_{t+1}\right)=\begin{cases}
+\delta_{t+1,t'}\delta_{\widetilde{\Pi}_{t+1}^{\left(i\right)},\Pi_{t'}^{\left(i\right)}}\rho\left(S_{t},S_{t'}\right) & t<i\\
+0 & t=i
+\end{cases}
+\]
+where 
+\begin{itemize}
+\item the only admissible state is the terminal state when $t>i$, marking
+the end of this episode;
+\item $\widetilde{\Pi}_{t+1}^{\left(i\right)}$ refers to the portfolio
+value determined by the self-financing condition
+\[
+\widetilde{\Pi}_{t+1}^{\left(i\right)}=e^{r\Delta t}\left(\Pi_{t}-u_{t}^{\left(i\right)}S_{t}\right)+u_{t}^{\left(i\right)}S_{t+1}-\text{TC}\left(u_{t+1}^{\left(i\right)}-u_{t}^{\left(i\right)},S_{t+1}\right)
+\]
+(which is the same as Eqn. \ref{eq:qlbs-modified-self-financing});
+\item $\rho$ characterizes the dynamics of the underlying asset, e.g. the
+discrete version geometric brownian motion;
+\item $R_{t+1}=0$ for $t+1<i$ and $R_{i}=H\left(h\left(S_{i}\right),\Pi_{i}^{\left(i\right)}\right)$
+where $H$ is a given penalty function that measures how accurate
+the portfolio value $\Pi_{i}^{\left(i\right)}$ mimics the option
+payoff $h\left(S_{i}\right)$.
+\end{itemize}
+As we mentioned in the previous paragraph, we stack a few pricing
+tasks together so that the agent gets a reward from the portfolio
+that recently terminates. For a $T$-term option, we combine $T$
+tasks together where the agent is required to learn to price not only
+the $T$-term one but all $t$-term ones for $t<T$. We briefly illustrate
+the stucture of RLOP in Fig. \ref{fig:rlop-illustration}.
+
+\begin{figure}[]
+\begin{centering}
+\includegraphics[width=0.6\linewidth]{backup/rlop-illustration}
+\par\end{centering}
+\caption{A brief illustration on the RLOP environment.}
+
+\label{fig:rlop-illustration}
+\end{figure}
+
+
+\subsection{Specification}
+
+In this section, we describe how to set-up the RLOP environment and
+the necessary numerical procedures.
+
+\subsubsection{Environment}
+
+As in the QLBS model, the environment samples a family of asset price
+trajectories and maintains the portfolio value process. The asset
+value is assumed to obey the geometrical brownian motion, as in Sec.
+\ref{subsec:Environment}. We also allows the environment parameters
+to change at the beginning of each episode according to a Poisson
+process with intensity $\varUpsilon$.
+
+\subsubsection{Agent Parametrization and Learning Algorithm}
+
+The agent, i.e. the hedging strategy is parametrized by a Resnet-motivated
+structure, same in Sec. \ref{subsec:Agent-Parametrization}. The REINFORCE
+algorithm is adopted to train the agent. One caveat is that there
+is no need to use a baseline as in the QLBS model, since in this case
+the reward function is for penalty rather than learning the optimal
+price.
+
+\subsection{Experiments and Results}
+
+We include a variety of experiments, including a demonstration that
+shows the agent learns over time, a comparison with the Black-Scholes
+baseline model, and a another one on the effect of trading costs.
+
+\subsubsection{Demonstration on learning\label{subsec:Demonstration-on-learning-rlop}}
+
+We use a parameter setting similar to Sec. \ref{subsec:Demonstration-on-learning}
+where $r=0.01,\sigma=0.1,\mu=0,T=5,K=1,S_{0}=1,\Delta t=1$. The agent
+is trained under no transaction cost with a fixed initial asset value
+and the training curve is flat after around 8000 steps, shown in Fig.
+\ref{fig:rlop-exp1-learns}. Similar to the QLBS setting, we introduce
+adjustment to the parameters (i.e. the initial asset value in the
+experiments to follow) by a Poisson process. We mark where the adjustment
+occurs in the bottom half of the figure by purple triangles.
+
+We also compare the optimal hedging strategy learnt with the BS predictions.
+In general, the hedging curve should have a greater slope for a smaller
+remaining time which implies that the price of the option is more
+sensitive to the underlying asset price. As expected, both the learnt
+position and the BS position show a greater slope when approaching
+the terminal time. The one learnt by our RL agent is slightly insensitve
+to the time variable.
+
+\begin{figure}[]
+\caption{Episodic return improves during training. Top figure: no adjustment
+on the initial price $S_{0}$; bottom figure: the initial price is
+adjusted via a Poisson process.}
+\includegraphics[width=0.47\linewidth]{rlop/experiment1/learning-curve.png}
+
+\label{fig:rlop-exp1-learns}
+
+\end{figure}
+
+\begin{figure}[]
+\caption{Optimal hedge position learnt compared with BS predictions (Eqn. \ref{eq:bs-hedge}).}\includegraphics[width=0.47\linewidth]{rlop/experiment1/hedge_position.png}
+
+\label{fig:rlop-exp1-hedge}
+\end{figure}
+
+
+\subsubsection{Effect of transaction cost\label{subsec:Effect-of-transaction-rlop}}
+
+We proceed to measure how the transaction cost can effect the optimal
+hedging strategy. We use the same setting as laid out in Sec. \ref{subsec:Effect-of-transaction}
+where $\epsilon$ is the friction parameter. We plot the optimal hedging
+position learnt under different $\epsilon$ in Fig. \ref{fig:rlop-exp2}.
+The general trend is that a large $\epsilon$ discourages hedging
+amounts, since it leads to a higher trading cost on average. A higher
+friction also leads to a larger distinction between positions at different
+times, which implies that in an illuquid market, we need to value
+the time variable more than in a liquid one.
+
+\begin{figure}[]
+\includegraphics[width=1\linewidth]{rlop/experiment2/hedge_position.png}
+
+\caption{Optimal hedging strategy learnt under different transaction costs.}
+
+\label{fig:rlop-exp2}
+\end{figure}

@@ -1,0 +1,97 @@
+A clean academic-style neural network architecture diagram for a CS conference paper.
+Title: "RLOP Three-Network Architecture with Differentiable Pricing Layer"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION A — TOP PANEL: Comparison bar (narrow strip across full width)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Two side-by-side mini-boxes with a bold "vs" between them:
+
+  [ Standard Actor-Critic ]          [ RLOP (ours) ]
+    Policy π                           Policy π
+    Value V                            Value V
+    ── (only 2 networks) ──            Price Estimator P  ← NEW
+                                       ── (3 networks, decoupled) ──
+
+For the left box, set it slightly transparent.
+For the right box, can use a brighter color.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION B — MAIN PANEL: Three-column architecture
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[SHARED INPUT BOX at top, full width]
+  9-dim raw state: (S, t, T−t, K, r, μ, σ, λ, c)
+  ↓ arrow labeled "Embedded Normalisation (in forward pass)"
+  Transformed: (log-moneyness m̃, normalised τ̃, ...)
+  Right-side callout bubble: "✓ Scale invariance encoded at architecture level"
+
+Three parallel vertical columns below, labeled:
+  Left:   "Policy  π_θ"   [blue border]
+  Middle: "Value Baseline  V_φ"  [gray border]
+  Right:  "Price Estimator  P_ψ"  [orange/accent border, slightly wider]
+
+Each column has:
+
+  [ResNet block × D]  
+  Drawn as stacked rounded rectangles:
+    Linear → LayerNorm → ReLU → Linear  +  skip-connection arrow on the side
+
+OUTPUT HEADS:
+
+  Policy π_θ:
+    → Two branches: μ_π   and  σ_π 
+    → Output: "Hedge ratio  a_t ~ N(μ_π, σ_π²)"
+    Right callout: "✓ Bounded exploration noise
+                    prevents degenerate policies"
+
+  Value Baseline V_φ:
+    → Single linear head
+    → Output: "Cost-to-go  V(x)"
+    Right callout: "✓ Per-step signal only
+                    — reduces gradient variance"
+
+  Price Estimator P_ψ:
+    → Linear head → scalar  σ̂  (latent volatility, positive)
+    ↓
+    [Shaded highlight box] "Closed-form Pricing Layer  P(S, K, τ, r, σ̂)"
+        — rectangular-double-border to emphasise it is a fixed formula, not learned weights
+    ↓
+    Output: "Replication price  V̂"
+    Right callout (two stacked badges):
+        "✓ End-to-end gradient flow,
+         Interpretable output"
+
+SHARED WEIGHTS annotation:
+  Curly brace connecting P_ψ backbone to π_θ backbone on their shared side,
+  labeled: "shared ResNet weights"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION C — BOTTOM PANEL: Training signal flow
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Three horizontal arrows pointing up into each column, color-coded:
+
+  [Blue arrow]  → π_θ
+    Label: "Per-step advantage  G_t − V_φ(x)"
+
+  [Gray arrow]  → V_φ
+    Label: "Per-step return  G_t"
+
+  [Red thick arrow]  → P_ψ
+    Label: "Full-trajectory error  δ = h(S_T) − Π_T
+            (updated once per episode, all maturities)"
+
+Below all three arrows, a single footer box (full width, light background):
+  "Training infrastructure: 2,500 parallel simulation paths per episode
+   — fully vectorised PyTorch; GPU train / CPU inference (grad-fn mode)"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Style:
+  White background, sans-serif font (e.g. Inter or Helvetica).
+  Rounded-corner boxes throughout.
+  Color palette: blue (π), gray (V), orange (P), green (pro badges), red (trajectory signal).
+  Pro badges are small pill-shaped labels with a ✓ and green fill.
+  No gradients or decorative textures. Publication-quality vector output.
+  All three main columns equal height; Section A and C are 20% as tall.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

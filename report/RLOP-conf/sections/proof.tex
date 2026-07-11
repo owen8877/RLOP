@@ -1,0 +1,55 @@
+\begin{prop}
+For sufficiently large $\epsilon$ that appears in the linear transaction cost assumption $\text{TC}(\Delta u, S)=\epsilon|\Delta u| \,S$, the option price $C(S_0) := -\max_{\pi\in\mathbf{\Pi}} V_0^\pi$ is monotonically increasing in both $\lambda$ and $\epsilon$.
+\label{prop:qlbs-monotone}
+\end{prop}
+\begin{proof}
+% Given any fixed policy $\pi$ and under the self-financing condition \cref{eq:self-financing}, and the assumed linear transaction cost (??), the portfolio value at time $t$ may be written as
+Given any policy $\pi$, the portfolio value at time $t$ may be written as
+\begin{align}
+\Pi_t &= u_t  S_t + \epsilon \mathfrak{S}_t + \gamma^{T-t} \mathfrak{E}_t, \label{eq:qlbs-proof-port-value} \\
+\mathfrak{S}_t :&= \sum_{j=0}^{T-t-1} \gamma^{j+1} |\Delta u_{t+j}| S_{t+j+1}, \nonumber \\
+\mathfrak{E}_t :&= h(S_T) - u_{T-1}S_T \nonumber
+\end{align}
+under the self-financing condition
+% \cref{eq:self-financing}
+(eq. 1)
+.
+This expression is affine in $\epsilon$ and independent of $\lambda$.
+Hence, the monotonicity of $V_t^\pi$ with respect to  $\lambda$ follows immediately from
+% \cref{eq:qlbs-modified-V}
+(eq. 2)
+, since the discounted risk term is always non-positive.
+For $\epsilon\gg1$, the monotonicity in $\epsilon$ follows from the fact that $\text{Var}_t\Pi_{t}\left(X_{t}\right)$ is a quadratic function of $\epsilon$ with non-negative leading coefficient.
+% which is independent of $\lambda$ and affine in $\epsilon$. Thus, the monitonicity of $V_t^\pi$ with respect to $\lambda$ immediately follows since the discounted risk in \ref{eq:qlbs-modified-V} is always non-positive.
+% The monotonicty to $\epsilon$ in large $\epsilon$ regime is a natural consequence of $\text{Var}_t\Pi_{t}\left(X_{t}\right)$ being a quadratic form in $\epsilon$.
+
+To establish that $C(S_0,\lambda)$ is increasing in $\lambda$, let $\pi(\lambda)$ denote the maximizer of $V_t^\pi$.
+For $\lambda ' > \lambda$, we have
+$V_t^{\pi(\lambda )}(S_t;\lambda) \ge V_t^{\pi(\lambda')}(S_t;\lambda)$
+because $\pi(\lambda)$  maximizes the value function at level $\lambda$.
+From the argument above, $V_t^{\pi(\lambda')}(S_t;\lambda') \le V_t^{\pi(\lambda')}(S_t;\lambda)$.
+Combining these inequalities yields
+\begin{align*}
+C(S_0,\lambda') &= -V_0^{\pi(\lambda')} (S_0;\lambda') \ge -V_0^{\pi(\lambda')} (S_0;\lambda) \\
+&\ge -V_0^{\pi(\lambda)} (S_0;\lambda) = C(S_0,\lambda) .
+\end{align*}
+Thus, $C$ is monotone in $\lambda$.
+The argument for its monotonicity in $\epsilon$ proceeds similarly.
+
+% To show that $C(S_0,\lambda)$ is increasing in $\lambda$, let us introduce the maximizer $\pi(\lambda)$ for $V_t^\pi$. Then, given $\lambda ' > \lambda$, $V_t^{\pi(\lambda )}(S_t;\lambda) \ge V_t^{\pi(\lambda')}(S_t;\lambda)$ due to $\pi(\lambda )$ being $V_t^{\cdot}(S_t;\lambda)$'s maximier. We also establish that 
+% $
+% V_t^{\pi(\lambda')}(S_t;\lambda') \le V_t^{\pi(\lambda')}(S_t;\lambda)
+% $
+% in the paragraph above.
+% \begin{align}
+% C(S_0,\lambda') = -V_0^{\pi(\lambda')} (S_0;\lambda') \ge -V_0^{\pi(\lambda')} (S_0;\lambda) \ge -V_0^{\pi(\lambda)} (S_0;\lambda) = C(S_0,\lambda) .
+% \end{align}
+% The monitonicty of $C$ to $\epsilon$ can be established in a similar fashion.
+
+% As for the monotonicty to $\epsilon$, notice that $\partial_\epsilon \Pi_t = \mathfrak{S}_t \ge 0$, it suffices to shown that the risk component $\text{Var}_t\Pi_{t}\left(X_{t}\right)$ is increasingly in $\epsilon$.
+% To see this, we expand the variance by
+% \begin{equation}
+% \text{Var}_t\Pi_{t}\left(X_{t}\right) = \text{Var}_t\left( \gamma^{T-t} \mathfrak{E}_t\right) + \epsilon^2 \text{Var}_t\left(\mathfrak{S}_t\right) + \epsilon \text{Cov}_t\left(\gamma^{T-t} \mathfrak{E}_t, \mathfrak{S}_t\right) 
+% \label{eq:qlbd-proof-expand-var}
+% \end{equation}
+\end{proof}

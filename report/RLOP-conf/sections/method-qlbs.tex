@@ -1,0 +1,81 @@
+% \section{Two Reinforcement Learning Paradigms for Option Pricing}
+\section{Two RL Formulations for Option Pricing and Hedging}
+\label{method}
+
+% To overcome the limitations of the original QLBS formulation, two complementary strategies have been proposed. 
+% The first approach extends the existing QLBS framework by redefining the value function $V_t^\pi$ as an $\{\cF_t\}$-adapted process.
+% The second approach adopts a conceptually different perspective by constructing an adaptive portfolio value process and defining the reward in terms of the terminal hedging tracking error. 
+% Both approaches explicitly account for transaction costs and are compatible with both value-based and policy-based reinforcement learning algorithms.
+
+% To address the limitations of the original QLBS formulation, two complementary approaches can be pursued.
+We pursue two complementary methods where
+the first extends the QLBS framework by redefining the value function $V_t^\pi$ adapted to ${\cF_t}$,
+and the second takes a forward viewpoint by constructing an adaptive portfolio value process and specifying the reward via the terminal hedging tracking error.
+Both approaches incorporate transaction costs explicitly and remain compatible with both value-based and policy-based reinforcement learning algorithms.
+
+
+\subsection{Adaptive-QLBS: Backward Value-Based RL}
+
+\begin{defn}
+\label{def:qlbs}
+Let $d_T(t):=\left(1-\frac{t}{T}\right)$ and $\gamma:=e^{-r \Delta t}$.
+The value function of the adaptive-QLBS method reads
+{\small%
+\begin{align}
+% V_{t}^{\pi}\left(X_{t}\right)&:=\bE_{t}^{\pi}\left[-d_T(t)\Pi_{t}\left(X_{t}\right)-\lambda\sum_{\tau=t}^{T}\gamma^{\tau-t}\sqrt{\text{Var}\left[\Pi_{\tau}\left(X_{\tau}\right)\right]}\right],\label{eq:qlbs-modified-V}
+V_{t}^{\pi}\left(X_{t}\right)&:=\bE_{t}^{\pi}\left[-d_T(t)\Pi_{t}-\lambda\sum_{\tau=t}^{T}\gamma^{\tau-t}\sqrt{\text{Var}\Pi_{\tau}}\right],\label{eq:qlbs-modified-V}
+\end{align}
+}with $R_{t+1}\left(X_{t},a_{t}\right):=V_t^\pi(X_t)-\bE_{t}^{\pi} V_{t+1}^\pi(X_{t+1})$ as the reward function where $X_{t+1}$ is implicitly determined by $X_t,a_t$ and the self-financing condition \cref{eq:self-financing}
+\end{defn}
+
+% Our modifications are twofold:
+% we introduce a diminishing factor $d_T(t)$ that weights the portfolio term from $1$ at $t=0$ to $0$ at $t=T$, smoothing the contribution of the terminal payoff,
+% and we replace variance terms by their square roots to obtain a dimensionless and numerically more stable value estimate.
+% When transaction costs are included, the portfolio value process $\Pi_{t}$ is computed backward using the self-financing condition \cref{eq:self-financing}.
+% A schematic illustration of the adaptive-QLBS model is provided in \cref{fig:qlbs-illustration}.
+
+Our modifications are twofold:
+the discounting factor $d_T(t)$ lessens the influence of the terminal payoff on the portfolio term,
+and the variance terms are square rooted to obtain a dimensionless, numerically more stable value estimate.
+With transaction costs, the portfolio value process $\Pi_t$ is computed backward via the self-financing relation in \cref{eq:self-financing}.
+One can show that the estimated price $C(S_0)$ is monotonically increasing in both $\lambda$ and $\epsilon$ when $\epsilon\gg 1$.
+% we introduce a discounting factor $d_T(t)$ that decreases from $1$ at $t=0$ to $0$ at $t=T$, thereby smoothing the influence of the terminal payoff on the portfolio term,
+% and we replace variance terms with their square roots to obtain a dimensionless, numerically more stable value estimate.
+% With transaction costs, the portfolio value process $\Pi_t$ is computed backward via the self-financing relation in \cref{eq:self-financing}.
+A schematic overview of the adaptive-QLBS model is shown in \cref{fig:qlbs-illustration}.
+
+
+\begin{figure*}[htbp]
+    % \centering
+    % \hfill
+    \begin{minipage}{0.35\textwidth}
+        \centering
+        \input{plot/qlbs}
+        % \includegraphics[width=\linewidth]{backup/qlbs-illustration}
+        
+        \label{fig:qlbs-illustration}
+    \end{minipage}
+    % \hfill
+    \hspace{0.02\textwidth}
+    % Second figure
+    \begin{minipage}{0.62\textwidth}
+        \centering
+        \input{plot/rlop}
+        % \includegraphics[width=\linewidth]{backup/rlop-illustration.png}
+        % \label{fig:rlop-illustration}
+    \end{minipage}
+    % \hfill
+    
+    \caption{Adaptive-QLBS (left, backward \& value-based) vs RLOP (right, forward \& replication-based).}
+
+\end{figure*}
+
+
+% The proposition below explains why the option price is increasing in the key parameters where higher risk aversion 
+% $\lambda$ and larger transaction friction both raise the price. We first prove monotonicity of the value function under any fixed policy, and then obtain monotonicity of the optimal value by maximization. 
+
+
+
+% The proposition below clarifies why the option price increases with the key parameters: greater risk aversion $\lambda$ and higher transaction frictions both lead to a higher price. We first establish monotonicity of the value function under any fixed policy, and then derive monotonicity of the optimal value by taking the maximizer.
+
+% \input{sections/proof}
